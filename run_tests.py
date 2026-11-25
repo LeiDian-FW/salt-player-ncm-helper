@@ -13,6 +13,11 @@ import os
 import shutil
 import subprocess
 import sys
+try:  # 某些 Windows 环境默认 cp1252，无法输出中文
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(BASE, "build")

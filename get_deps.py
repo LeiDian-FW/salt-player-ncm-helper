@@ -10,6 +10,11 @@
 import hashlib
 import os
 import sys
+try:  # 某些 Windows 环境默认 cp1252，无法输出中文
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 import urllib.request
 
 BASE = os.path.dirname(os.path.abspath(__file__))
