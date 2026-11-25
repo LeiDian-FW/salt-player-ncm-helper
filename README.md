@@ -1,5 +1,9 @@
 # NCM 助手 · Salt Player Mod
 
+[![build](https://github.com/LeiDian-FW/salt-player-ncm-helper/actions/workflows/build.yml/badge.svg)](https://github.com/LeiDian-FW/salt-player-ncm-helper/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/LeiDian-FW/salt-player-ncm-helper)](https://github.com/LeiDian-FW/salt-player-ncm-helper/releases)
+[![license](https://img.shields.io/github/license/LeiDian-FW/salt-player-ncm-helper)](LICENSE)
+
 把网易云音乐下载的 `.ncm` 文件**自动**转成通用格式，并整理进 Salt Player 的音乐库。
 
 > **English**: A native mod for [Salt Player for Windows](https://store.steampowered.com/app/3009140/Salt_Player/) (Steam / Microsoft Store) that automatically decrypts NetEase Cloud Music `.ncm` files into original FLAC/MP3 (bit-exact, no re-encoding), archives them as `Artist/Album`, embeds cover art, and fills in missing lyrics from NetEase.
@@ -31,7 +35,7 @@
 
 ## 安装
 
-1. 从 [Releases](../../releases) 下载最新的 `plugin-io.github.spwncm.ncmhelper-*.spmod`
+1. 从 [Releases](https://github.com/LeiDian-FW/salt-player-ncm-helper/releases) 下载最新的 `plugin-io.github.spwncm.ncmhelper-*.spmod`
 2. 打开 Salt Player → **创意工坊 → 模组管理**
 3. 点击 **导入模组**，选择下载的 `.spmod` 文件
 4. 打开该 Mod 的操作菜单 → **启用**，按需勾选权限：
