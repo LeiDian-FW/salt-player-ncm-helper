@@ -1,0 +1,21 @@
+# 构建产物与本地环境
+build/
+libs/*.jar
+jdk25/
+jdk*/
+__pycache__/
+*.pyc
+
+# 测试临时文件
+test/samples/
+test/tmp/
+test/out/
+test/run/
+test/pkgcheck/
+
+# 编辑器
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

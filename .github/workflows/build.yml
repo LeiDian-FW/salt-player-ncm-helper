@@ -1,0 +1,47 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download compile-time dependencies
+        run: python get_deps.py
+
+      - name: Build plugin package
+        run: python build.py
+
+      - name: Run tests (offline)
+        run: python run_tests.py --no-network
+
+      - name: Upload .spmod
+        uses: actions/upload-artifact@v4
+        with:
+          name: spmod-package
+          path: build/libs/*.spmod
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/*.spmod
+          generate_release_notes: true
