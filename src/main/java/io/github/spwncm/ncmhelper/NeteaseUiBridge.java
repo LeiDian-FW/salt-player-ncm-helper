@@ -48,6 +48,107 @@ public final class NeteaseUiBridge {
     }
 
     // ---------------- 供 Kotlin 调用 ----------------
+    /** 下载进度回调（由 Kotlin 实现，回调发生在下载线程） */
+    public interface ProgressSink {
+        void status(String text);
+
+        void song(int index, int total, String name, String artist);
+
+        void progress(float fraction);
+
+        void stats(String text);
+
+        void done(String summary);
+
+        void error(String message);
+    }
+
+    private static volatile boolean downloadCancelled;
+
+    /** 搜索（阻塞，调用方需在 IO 线程） */
+    public static java.util.List<NeteaseClient.Song> search(String keyword, int limit) throws Exception {
+        NeteaseClient c = client;
+        if (c == null) throw new IllegalStateException("插件未就绪");
+        return c.search(keyword, limit);
+    }
+
+    /** 歌单（阻塞） */
+    public static java.util.List<NeteaseClient.Song> playlist(long id) throws Exception {
+        NeteaseClient c = client;
+        if (c == null) throw new IllegalStateException("插件未就绪");
+        return c.playlist(id);
+    }
+
+    /** 我喜欢的音乐（阻塞） */
+    public static java.util.List<NeteaseClient.Song> likes() throws Exception {
+        NeteaseClient c = client;
+        if (c == null) throw new IllegalStateException("插件未就绪");
+        return c.myLikes();
+    }
+
+    /** 下载列表中的歌曲（异步），kind: search / playlist / likes */
+    public static void downloadAsync(String kind, String argument, int limit, ProgressSink sink) {
+        downloadCancelled = false;
+        Thread t = new Thread(() -> {
+            try {
+                MainPlugin p = MainPlugin.instance();
+                if (p == null) throw new IllegalStateException("插件未就绪");
+                java.util.List<NeteaseClient.Song> songs;
+                switch (kind) {
+                    case "playlist" -> songs = playlist(Long.parseLong(argument.strip()));
+                    case "likes" -> songs = likes();
+                    default -> songs = search(argument.strip(), Math.max(limit * 3, 30));
+                }
+                if (songs.isEmpty()) {
+                    sink.error("没有可下载的歌曲");
+                    return;
+                }
+                NeteaseDownloader dl = new NeteaseDownloader(client, java.nio.file.Paths.get(p.neteaseLibraryPath()), p.historyRef());
+                dl.download(songs, limit, true, new NativeDownloadListener(sink));
+            } catch (NeteaseClient.DownloadCancelled e) {
+                sink.error("已取消");
+            } catch (Throwable e) {
+                sink.error(String.valueOf(e));
+            }
+        }, "netease-native-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** 原生界面的下载监听（同时支持取消） */
+    private static final class NativeDownloadListener
+            implements NeteaseDownloader.Listener, NeteaseDownloader.Cancellable {
+        private final ProgressSink sink;
+
+        NativeDownloadListener(ProgressSink sink) {
+            this.sink = sink;
+        }
+
+        @Override public void onStart(int total) { sink.stats("0 / " + total); }
+
+        @Override public void onSong(int index, int total, NeteaseClient.Song song) {
+            sink.song(index, total, song.name, song.artistText());
+        }
+
+        @Override public void onBytes(long done, long fileTotal) {
+            sink.progress(fileTotal > 0 ? (float) Math.min(1.0, done / (double) fileTotal) : 0f);
+        }
+
+        @Override public void onResult(String status, String message) { sink.stats(status + " | " + message); }
+
+        @Override public void onFinish(String summary) { sink.done(summary); }
+
+        @Override public boolean isCancelled() { return downloadCancelled; }
+    }
+
+    /** 取消原生界面发起的下载 */
+    public static void downloadCancel() {
+        downloadCancelled = true;
+    }
+
+    public static boolean downloadCancelled() {
+        return downloadCancelled;
+    }
     public static boolean loggedIn() {
         return client != null && client.isLoggedIn();
     }

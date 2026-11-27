@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,28 +37,48 @@ import com.xuncorp.spw.workshop.api.WorkshopApi
 import com.xuncorp.spw.workshop.api.hook.ComposableHook
 import com.xuncorp.spw.workshop.api.hook.HookHandle
 import com.xuncorp.spw.workshop.api.hook.UiHookCall
+import io.github.spwncm.ncmhelper.NeteaseClient
 import io.github.spwncm.ncmhelper.NeteaseUiBridge
 import io.github.spwncm.ncmhelper.QrCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** 登录二维码的登录页前缀 */
 private const val LOGIN_PREFIX = "https://music.163.com/login?codekey="
 
+private val BG = Color(0xFF141B26)
+private val CARD = Color(0xFF171E29)
+private val TRACK = Color(0xFF232C3A)
+private val ACCENT = Color(0xFF2D6CDF)
+private val TEXT = Color(0xFFEAF1FA)
+private val DIM = Color(0xFF8FA3B8)
+private val CHIP = Color(0xFF232F40)
+
 /**
- * 原生 Compose 网易云界面：Hook 到宿主导航根组件后，以原生 Dialog 方式渲染面板。
- * 配置页「打开网易云原生面板」按钮会调用 setVisible(true)。
+ * 原生 Compose 网易云界面：Hook 宿主导航根组件后以原生 Dialog 渲染。
+ * 页签：登录 / 搜索 / 歌单；下载进度为原生进度条。
  */
 object NeteaseNativeUi {
 
     private var hookHandle: HookHandle? = null
-    private var hookClass: ComposableHook? = null
 
     internal var visible by mutableStateOf(false)
     internal var status by mutableStateOf("")
     internal var message by mutableStateOf("")
     internal var qrRows by mutableStateOf<Array<BooleanArray>?>(null)
+    internal var scanToken by mutableStateOf(0)
+
+    internal var tab by mutableStateOf(0) // 0 登录 / 1 搜索 / 2 歌单
+    internal var keyword by mutableStateOf("")
+    internal var playlistId by mutableStateOf("")
+    internal var listTitle by mutableStateOf("")
+    internal var songs by mutableStateOf<List<NeteaseClient.Song>>(emptyList())
+    internal var busy by mutableStateOf(false)
+
+    internal var dlActive by mutableStateOf(false)
+    internal var dlFraction by mutableStateOf(0f)
+    internal var dlText by mutableStateOf("")
+    internal var dlStats by mutableStateOf("")
 
     @JvmStatic
     fun isInstalled(): Boolean = hookHandle != null
@@ -70,27 +92,24 @@ object NeteaseNativeUi {
         if (value) refreshStatus()
     }
 
-    /** 安装 Hook（需要 CLASS_TRANSFORM 权限，由 Java 侧检查后调用） */
     @JvmStatic
     fun install(): Boolean {
         if (hookHandle != null) return true
         return try {
-            val hook = PanelHook()
-            hookClass = hook
             hookHandle = WorkshopApi.hookRegistrar.afterComposable(
                 "com.xuncorp.voxzen.ui.navigation.AppNavigationKt",
                 "Content",
                 "com.xuncorp.voxzen.ui.navigation.AppNavigationKt",
                 emptyList<String>(),
                 50,
-                hook
+                PanelHook()
             )
             refreshStatus()
+            println("[NCM Helper] 原生界面已安装")
             true
         } catch (t: Throwable) {
             println("[NCM Helper] 原生界面 Hook 安装失败: $t")
             hookHandle = null
-            hookClass = null
             false
         }
     }
@@ -102,7 +121,6 @@ object NeteaseNativeUi {
         } catch (_: Throwable) {
         }
         hookHandle = null
-        hookClass = null
         visible = false
     }
 
@@ -116,29 +134,98 @@ object NeteaseNativeUi {
         scanToken++
     }
 
-    internal var scanToken by mutableStateOf(0)
-
     internal fun clipboardLogin() {
         Thread {
-            val text = try {
+            message = try {
                 NeteaseUiBridge.clipboardLogin()
             } catch (t: Throwable) {
                 "登录失败: $t"
             }
-            message = text
             refreshStatus()
         }.start()
     }
+
+    /** 加载搜索或歌单列表（后台线程） */
+    internal fun loadSongs(kind: String) {
+        if (busy) return
+        busy = true
+        message = "正在加载…"
+        Thread {
+            try {
+                val result = when (kind) {
+                    "playlist" -> NeteaseUiBridge.playlist(playlistId.trim().toLong())
+                    "likes" -> NeteaseUiBridge.likes()
+                    else -> NeteaseUiBridge.search(keyword.trim(), 30)
+                }
+                songs = result
+                listTitle = when (kind) {
+                    "playlist" -> "歌单：" + result.size + " 首"
+                    "likes" -> "我喜欢的音乐：" + result.size + " 首"
+                    else -> "搜索「" + keyword.trim() + "」：" + result.size + " 首"
+                }
+                message = ""
+            } catch (t: Throwable) {
+                message = "加载失败: " + t.message
+            } finally {
+                busy = false
+            }
+        }.start()
+    }
+
+    /** 原生面板内开始下载（kind: search / playlist / likes） */
+    internal fun startDownload(kind: String) {
+        if (dlActive) return
+        if (!NeteaseUiBridge.loggedIn()) {
+            message = "请先登录网易云"
+            return
+        }
+        if (!NeteaseUiBridge.downloadLimitValid()) {
+            message = "「每次最多下载数」需填写 1-50 的整数"
+            return
+        }
+        dlActive = true
+        dlFraction = 0f
+        dlStats = ""
+        dlText = "准备下载…"
+        val arg = when (kind) {
+            "playlist" -> playlistId.trim()
+            "likes" -> ""
+            else -> keyword.trim()
+        }
+        NeteaseUiBridge.downloadAsync(kind, arg, NeteaseUiBridge.downloadLimit(),
+            object : NeteaseUiBridge.ProgressSink {
+                override fun status(text: String) { dlText = text }
+
+                override fun song(index: Int, total: Int, name: String, artist: String) {
+                    dlText = "(" + index + "/" + total + ") " + name +
+                            (if (artist.isEmpty()) "" else " - " + artist)
+                }
+
+                override fun progress(fraction: Float) { dlFraction = fraction }
+
+                override fun stats(text: String) { dlStats = text }
+
+                override fun done(summary: String) {
+                    dlFraction = 1f
+                    dlText = summary
+                    dlActive = false
+                    refreshStatus()
+                }
+
+                override fun error(message: String) {
+                    dlText = "下载失败: " + message
+                    dlActive = false
+                }
+            })
+    }
 }
 
+/** 零尺寸锚点 + 原生 Dialog */
 private class PanelHook : ComposableHook() {
     @Composable
     override fun Content(call: UiHookCall) {
-        // 零尺寸锚点：不参与宿主布局，只借这个调用点挂载原生 Dialog
         Box(Modifier.size(0.dp))
-        if (NeteaseNativeUi.visible) {
-            NeteasePanel()
-        }
+        if (NeteaseNativeUi.visible) NeteasePanel()
     }
 }
 
@@ -147,45 +234,69 @@ private fun NeteasePanel() {
     Dialog(onDismissRequest = { NeteaseNativeUi.visible = false }) {
         Box(
             Modifier
-                .width(520.dp)
-                .background(Color(0xFF171E29), RoundedCornerShape(16.dp))
-                .padding(22.dp)
+                .width(620.dp)
+                .background(BG, RoundedCornerShape(16.dp))
+                .padding(20.dp)
         ) {
             Column {
-                BasicText(
-                    "网易云音乐",
-                    style = TextStyle(color = Color(0xFFEAF1FA), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                )
-                Spacer(Modifier.height(4.dp))
-                BasicText(
-                    NeteaseNativeUi.status.ifEmpty { NeteaseUiBridge.statusText() },
-                    style = TextStyle(color = Color(0xFF8FA3B8), fontSize = 13.sp)
-                )
-                if (NeteaseNativeUi.message.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    BasicText(
-                        NeteaseNativeUi.message,
-                        style = TextStyle(color = Color(0xFFB9CDE3), fontSize = 12.sp)
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
+                // 标题栏
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    PanelButton("从剪贴板登录") { NeteaseNativeUi.clipboardLogin() }
-                    Spacer(Modifier.width(10.dp))
-                    PanelButton("扫码登录") { NeteaseNativeUi.startScan() }
+                    BasicText("网易云音乐",
+                        style = TextStyle(color = TEXT, fontSize = 20.sp, fontWeight = FontWeight.Bold))
+                    Spacer(Modifier.width(12.dp))
+                    BasicText(NeteaseNativeUi.status,
+                        style = TextStyle(color = DIM, fontSize = 12.sp))
+                }
+                Spacer(Modifier.height(12.dp))
+
+                // 页签
+                Row {
+                    Tab("登录", 0)
+                    Spacer(Modifier.width(8.dp))
+                    Tab("搜索", 1)
+                    Spacer(Modifier.width(8.dp))
+                    Tab("歌单", 2)
+                    Spacer(Modifier.width(8.dp))
+                    Tab("我喜欢", 3)
+                }
+                Spacer(Modifier.height(14.dp))
+
+                when (NeteaseNativeUi.tab) {
+                    0 -> LoginTab()
+                    1 -> SearchTab()
+                    2 -> PlaylistTab()
+                    else -> LikesTab()
+                }
+
+                // 下载进度
+                if (NeteaseNativeUi.dlActive || NeteaseNativeUi.dlText.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    ProgressSection()
+                }
+
+                if (NeteaseNativeUi.message.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    BasicText(NeteaseNativeUi.message, style = TextStyle(color = Color(0xFFB9CDE3), fontSize = 12.sp))
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (NeteaseNativeUi.songs.isNotEmpty()) {
+                        BasicText(NeteaseNativeUi.listTitle, style = TextStyle(color = DIM, fontSize = 12.sp))
+                    }
                     Spacer(Modifier.width(10.dp))
                     PanelButton("关闭") { NeteaseNativeUi.visible = false }
                 }
-                val rows = NeteaseNativeUi.qrRows
-                if (rows != null) {
-                    Spacer(Modifier.height(16.dp))
-                    QrCanvas(rows)
+
+                if (NeteaseNativeUi.songs.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    SongList()
                 }
             }
         }
     }
 
-    // 扫码登录副作用：申请 key → 绘制二维码 → 每 2 秒轮询
+    // 扫码登录副作用
     LaunchedEffect(NeteaseNativeUi.scanToken) {
         if (NeteaseNativeUi.scanToken == 0) return@LaunchedEffect
         val key = withContext(Dispatchers.IO) {
@@ -201,8 +312,7 @@ private fun NeteasePanel() {
         NeteaseNativeUi.message = "请用网易云 App 扫码"
         while (true) {
             delay(2000)
-            val code = withContext(Dispatchers.IO) { NeteaseUiBridge.pollQr(key) }
-            when (code) {
+            when (withContext(Dispatchers.IO) { NeteaseUiBridge.pollQr(key) }) {
                 803 -> {
                     NeteaseNativeUi.message = "登录成功"
                     NeteaseNativeUi.qrRows = null
@@ -222,12 +332,148 @@ private fun NeteasePanel() {
 }
 
 @Composable
+private fun LoginTab() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        PanelButton("从剪贴板登录") { NeteaseNativeUi.clipboardLogin() }
+        Spacer(Modifier.width(10.dp))
+        PanelButton("扫码登录") { NeteaseNativeUi.startScan() }
+        Spacer(Modifier.width(10.dp))
+        PanelButton("刷新状态") { NeteaseNativeUi.refreshStatus() }
+    }
+    val rows = NeteaseNativeUi.qrRows
+    if (rows != null) {
+        Spacer(Modifier.height(14.dp))
+        QrCanvas(rows)
+    }
+}
+
+@Composable
+private fun SearchTab() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        InputBox(NeteaseNativeUi.keyword, "输入歌曲/歌手关键词") {
+            NeteaseNativeUi.keyword = it
+        }
+        Spacer(Modifier.width(8.dp))
+        PanelButton("搜索") { NeteaseNativeUi.loadSongs("search") }
+        Spacer(Modifier.width(8.dp))
+        PanelButton("下载前 N 首") { NeteaseNativeUi.startDownload("search") }
+    }
+}
+
+@Composable
+private fun PlaylistTab() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        InputBox(NeteaseNativeUi.playlistId, "歌单 ID（数字）") {
+            NeteaseNativeUi.playlistId = it
+        }
+        Spacer(Modifier.width(8.dp))
+        PanelButton("加载") { NeteaseNativeUi.loadSongs("playlist") }
+        Spacer(Modifier.width(8.dp))
+        PanelButton("下载歌单") { NeteaseNativeUi.startDownload("playlist") }
+    }
+}
+
+@Composable
+private fun LikesTab() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        PanelButton("刷新列表") { NeteaseNativeUi.loadSongs("likes") }
+        Spacer(Modifier.width(8.dp))
+        PanelButton("下载我喜欢的音乐") { NeteaseNativeUi.startDownload("likes") }
+    }
+}
+
+@Composable
+private fun Tab(text: String, index: Int) {
+    val selected = NeteaseNativeUi.tab == index
+    Box(
+        Modifier
+            .background(if (selected) ACCENT else CHIP, RoundedCornerShape(8.dp))
+            .clickable { NeteaseNativeUi.tab = index }
+            .padding(horizontal = 14.dp, vertical = 7.dp)
+    ) {
+        BasicText(text, style = TextStyle(color = if (selected) Color.White else DIM, fontSize = 13.sp))
+    }
+}
+
+@Composable
+private fun InputBox(value: String, hint: String, onChange: (String) -> Unit) {
+    Box(
+        Modifier
+            .width(280.dp)
+            .background(CHIP, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        if (value.isEmpty()) {
+            BasicText(hint, style = TextStyle(color = Color(0xFF6E8298), fontSize = 13.sp))
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            textStyle = TextStyle(color = TEXT, fontSize = 13.sp),
+            singleLine = true
+        )
+    }
+}
+
+@Composable
+private fun ProgressSection() {
+    Column {
+        BasicText(NeteaseNativeUi.dlText.ifEmpty { "下载中…" },
+            style = TextStyle(color = TEXT, fontSize = 13.sp))
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .background(TRACK, RoundedCornerShape(6.dp))
+        ) {
+            val f = NeteaseNativeUi.dlFraction.coerceIn(0f, 1f)
+            if (f > 0f) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(f)
+                        .height(10.dp)
+                        .background(ACCENT, RoundedCornerShape(6.dp))
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicText(NeteaseNativeUi.dlStats,
+                style = TextStyle(color = DIM, fontSize = 12.sp))
+            Spacer(Modifier.width(12.dp))
+            if (NeteaseNativeUi.dlActive) {
+                PanelButton("取消下载") { NeteaseUiBridge.downloadCancel() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongList() {
+    Column {
+        NeteaseNativeUi.songs.take(15).forEachIndexed { i, song ->
+            BasicText(
+                (i + 1).toString() + ". " + song.name +
+                        (if (song.artistText().isEmpty()) "" else " - " + song.artistText()),
+                style = TextStyle(color = Color(0xFFC9D8EA), fontSize = 12.sp)
+            )
+            Spacer(Modifier.height(3.dp))
+        }
+        if (NeteaseNativeUi.songs.size > 15) {
+            BasicText("… 共 " + NeteaseNativeUi.songs.size + " 首",
+                style = TextStyle(color = DIM, fontSize = 11.sp))
+        }
+    }
+}
+
+@Composable
 private fun PanelButton(text: String, onClick: () -> Unit) {
     Box(
         Modifier
-            .background(Color(0xFF2D6CDF), RoundedCornerShape(8.dp))
+            .background(ACCENT, RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         BasicText(text, style = TextStyle(color = Color.White, fontSize = 13.sp))
     }
@@ -242,11 +488,7 @@ private fun QrCanvas(rows: Array<BooleanArray>) {
             for (y in 0 until n) {
                 for (x in 0 until n) {
                     if (rows[y][x]) {
-                        drawRect(
-                            Color.Black,
-                            topLeft = Offset(x * cell, y * cell),
-                            size = Size(cell, cell)
-                        )
+                        drawRect(Color.Black, topLeft = Offset(x * cell, y * cell), size = Size(cell, cell))
                     }
                 }
             }

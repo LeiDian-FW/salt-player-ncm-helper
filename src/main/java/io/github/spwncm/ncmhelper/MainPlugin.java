@@ -527,6 +527,10 @@ public class MainPlugin extends SpwPlugin {
         return INSTANCE;
     }
 
+    public History historyRef() {
+        return history;
+    }
+
     public String neteaseLibraryPath() {
         return neteaseLibrary;
     }
