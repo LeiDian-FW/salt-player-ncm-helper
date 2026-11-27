@@ -35,6 +35,12 @@ Compile-time dependencies (not redistributed with the plugin package):
   PF4J 3.12.0                 - Apache License 2.0  https://github.com/pf4j/pf4j
   Kotlin standard library     - Apache License 2.0  https://github.com/JetBrains/kotlin
 
-The plugin package itself contains only this project's own compiled classes.
+Runtime dependency bundled inside the plugin package (lib/):
+
+  ZXing core 3.5.3 - Apache License 2.0
+  https://github.com/zxing/zxing
+  Used only to render the NetEase login QR code.
+
+The rest of the plugin package contains this project's own compiled classes.
 Salt Player and NetEase Cloud Music are trademarks of their respective owners;
 this project is not affiliated with or endorsed by them.

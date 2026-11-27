@@ -28,13 +28,26 @@ public class TestPackage {
             }
         }
         Path classes = work.resolve("classes");
+        Path libDir = work.resolve("lib");
         Files.createDirectories(classes);
+        Files.createDirectories(libDir);
 
         // 1) 按宿主的方式解包 classes/
         try (JarFile zip = new JarFile(spmod.toFile())) {
             zip.stream().forEach(e -> {
                 if (e.isDirectory()) return;
                 String name = e.getName();
+                if (name.startsWith("lib/") && name.endsWith(".jar")) {
+                    try {
+                        Path target = libDir.resolve(name.substring("lib/".length()));
+                        try (InputStream in = zip.getInputStream(e)) {
+                            Files.copy(in, target);
+                        }
+                    } catch (Exception ex) {
+                        throw new RuntimeException(ex);
+                    }
+                    return;
+                }
                 if (!name.startsWith("classes/")) return;
                 Path target = classes.resolve(name.substring("classes/".length()));
                 try {
@@ -65,7 +78,15 @@ public class TestPackage {
         if (!"key-bindings".equals(perm)) throw new AssertionError("权限声明异常: " + perm);
 
         // 3) 类加载
-        URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()},
+        java.util.List<URL> urls = new java.util.ArrayList<>();
+        urls.add(classes.toUri().toURL());
+        try (var libs = Files.list(libDir)) {
+            for (Path jar : libs.filter(p -> p.toString().endsWith(".jar")).toList()) {
+                urls.add(jar.toUri().toURL());
+            }
+        }
+        System.out.println("[1.5] 运行时依赖 lib/: " + (urls.size() - 1) + " 个 jar");
+        URLClassLoader loader = new URLClassLoader(urls.toArray(new URL[0]),
                 TestPackage.class.getClassLoader());
         Class<?> main = Class.forName(cls, true, loader);
         if (!SpwPlugin.class.isAssignableFrom(main)) throw new AssertionError("主类未继承 SpwPlugin");
@@ -91,6 +112,16 @@ public class TestPackage {
         if (ext.getAnnotation(Extension.class) == null) throw new AssertionError("扩展类缺少 @Extension");
         ext.getDeclaredConstructor();
         System.out.println("[4] 扩展加载成功: " + ext.getName() + "（实现 PlaybackExtensionPoint）");
+
+        // 5) 运行时依赖（zxing）可用性：实际生成一张二维码
+        Class<?> qr = Class.forName("io.github.spwncm.ncmhelper.QrCode", true, loader);
+        Path png = work.resolve("qr-check.png");
+        qr.getMethod("writePng", String.class, Path.class, int.class)
+                .invoke(null, "https://music.163.com/login?codekey=TEST", png, 256);
+        if (!Files.isRegularFile(png) || Files.size(png) < 500) {
+            throw new AssertionError("lib/ 中的 ZXing 不可用：二维码未生成");
+        }
+        System.out.println("[5] 运行时依赖可用：二维码 " + Files.size(png) + " 字节");
 
         System.out.println("\n打包校验全部通过");
     }

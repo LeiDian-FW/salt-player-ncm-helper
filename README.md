@@ -155,4 +155,5 @@ test/tools/                 # 合成 NCM/FLAC/JPEG 的测试工具
 
 ## License
 
-[MIT](LICENSE)。第三方组件与 API 的许可声明见 LICENSE 末尾。
+[MIT](LICENSE)。第三方组件与 API 的许可声明见 LICENSE 末尾
+（插件运行时依赖 ZXing core 用于生成登录二维码，Apache-2.0）。
