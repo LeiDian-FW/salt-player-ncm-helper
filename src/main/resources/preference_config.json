@@ -132,6 +132,13 @@
           "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseNativeStatus"
         },
         {
+          "type": "button",
+          "title": "导出诊断信息",
+          "summary": "把版本/权限/原生Hook状态/日志尾部打包到桌面，便于反馈问题",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onExportDiagnostics"
+        },
+        {
           "key": "netease.enabled",
           "type": "switch",
           "title": "启用网易云功能",

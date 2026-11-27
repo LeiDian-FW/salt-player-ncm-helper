@@ -547,6 +547,10 @@ public class MainPlugin extends SpwPlugin {
         return INSTANCE;
     }
 
+    public Path dataDirRef() {
+        return dataDir;
+    }
+
     public NeteaseClient client() {
         return netease;
     }
@@ -639,6 +643,30 @@ public class MainPlugin extends SpwPlugin {
         Log.info("原生界面状态: installed=" + installed + ", hits=" + hits + ", target=" + target);
         toast("原生界面: " + (installed ? "已安装" : "未安装")
                 + " | Hook调用=" + hits + " | " + target);
+    }
+
+    /** 配置页「导出诊断信息」按钮入口 */
+    public static void onExportDiagnostics() {
+        MainPlugin p = INSTANCE;
+        if (p == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                java.nio.file.Path out = NeteaseDiagnostics.export();
+                toast("诊断包已导出到桌面: " + out.getFileName());
+                try {
+                    java.awt.Desktop.getDesktop().open(out.getParent().toFile());
+                } catch (Throwable ignored) {
+                }
+            } catch (Throwable e) {
+                Log.error("导出诊断失败: " + e);
+                toast("导出诊断失败: " + e.getMessage());
+            }
+        }, "diagnostics-export");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** 配置页「打开转换记录」按钮入口 */
