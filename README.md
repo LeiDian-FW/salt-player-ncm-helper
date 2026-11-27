@@ -111,6 +111,21 @@ Mod 配置页有独立的「网易云（实验）」分组，**默认关闭**，
 - 若扫码后仍显示未登录，请查看日志 `ncm-helper.log`（插件数据目录）；v1.2.1 起使用进程级
   CookieManager 捕获登录 Cookie，并会在对照码 803 未拿到 Cookie 时打印诊断信息
 
+## 快速开始（含原生界面验收）
+
+1. 下载 Release 里的 `.spmod` → Salt Player → 创意工坊 → 模组管理 → 导入模组
+2. 停用再启用模组（让插件加载）
+3. 配置页「NCM 助手」确认音乐库目录
+4. **想用原生界面**：模组管理 → 权限 → 授予 `CLASS_TRANSFORM` → 重新启用
+5. 配置页「网易云（实验）」
+   - 点「原生界面状态」：应显示 `已安装 | Hook调用>0 | 候选1/3`
+   - 点「打开网易云原生面板」：出现原生 Compose 面板即为验收通过
+6. 登录优先用 **「从剪贴板登录」**：浏览器 F12 → Application → Cookies → `music.163.com` → 复制 `MUSIC_U`
+7. 面板内可搜索 / 下载歌单 / 下载我喜欢的音乐，带原生进度条与取消
+8. 出现异常：点「导出诊断信息」，把桌面 `ncm-helper-diagnostics-*.zip` 发给作者
+
+验收/排错细节见 [docs/HOOK_TARGETS.md](docs/HOOK_TARGETS.md)。
+
 ## 原生界面（v1.3.0 起）
 
 ![原生面板预览](docs/native-preview.png)
