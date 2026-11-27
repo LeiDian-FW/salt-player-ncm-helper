@@ -35,6 +35,12 @@ DEPS = [
         "desc": "PF4J 3.12.0",
     },
     {
+        "file": "zxing-core.jar",
+        "url": "https://repo1.maven.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3.jar",
+        "sha256": "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82",
+        "desc": "ZXing core 3.5.3（二维码生成，随插件打包）",
+    },
+    {
         "file": "kotlin-stdlib.jar",
         "url": "https://repo1.maven.org/maven2/org/jetbrains/kotlin/"
                "kotlin-stdlib/2.4.20/kotlin-stdlib-2.4.20.jar",

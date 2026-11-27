@@ -98,6 +98,7 @@ def main():
         os.path.join(libs, "api.jar"),
         os.path.join(libs, "pf4j.jar"),
         os.path.join(libs, "kotlin-stdlib.jar"),
+        os.path.join(libs, "zxing-core.jar"),
     ])
     shutil.rmtree(TEST_OUT, ignore_errors=True)
     os.makedirs(TEST_OUT, exist_ok=True)
@@ -116,6 +117,8 @@ def main():
         run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestLyrics"])
     run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestPipeline", WORK, ncm])
     run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestHistory",
+         os.path.join(TEST_DIR, "history")])
+    run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestNetease",
          os.path.join(TEST_DIR, "history")])
     spmod = find_spmod()
     if not spmod:

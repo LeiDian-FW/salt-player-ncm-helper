@@ -112,6 +112,83 @@
           "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onClearHistory"
         }
       ]
+    },
+    {
+      "title": "网易云（实验）",
+      "config": "config.json",
+      "preferences": [
+        {
+          "key": "netease.enabled",
+          "type": "switch",
+          "title": "启用网易云功能",
+          "summary": "实验性功能：扫码登录、搜索、歌单、我喜欢的音乐、下载。默认关闭，需自行登录",
+          "default_value": false
+        },
+        {
+          "type": "button",
+          "title": "扫码登录",
+          "summary": "生成登录二维码并打开，用网易云 App 扫码确认",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseLogin"
+        },
+        {
+          "type": "button",
+          "title": "查看登录状态",
+          "summary": "显示当前账号或未登录",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseStatus"
+        },
+        {
+          "type": "button",
+          "title": "退出登录",
+          "summary": "清除本地保存的登录 Cookie",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseLogout"
+        },
+        {
+          "key": "netease.playlist_id",
+          "type": "edittext",
+          "title": "歌单 ID",
+          "summary": "歌单链接中的数字 ID，例如 3778678（热歌榜）",
+          "default_value": ""
+        },
+        {
+          "type": "button",
+          "title": "下载歌单",
+          "summary": "把歌单中可下载的歌曲保存到音乐库",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onDownloadPlaylist"
+        },
+        {
+          "key": "netease.search_keyword",
+          "type": "edittext",
+          "title": "搜索关键词",
+          "summary": "按关键词搜索并下载前几首可下载的歌曲",
+          "default_value": ""
+        },
+        {
+          "type": "button",
+          "title": "搜索并下载",
+          "summary": "搜索结果前 N 首保存到音乐库",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onSearchDownload"
+        },
+        {
+          "type": "button",
+          "title": "下载我喜欢的音乐",
+          "summary": "把「我喜欢的音乐」前 N 首保存到音乐库",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onDownloadLikes"
+        },
+        {
+          "key": "netease.limit",
+          "type": "seekbar",
+          "title": "每次最多下载（首）",
+          "default_value": 10.0,
+          "min": 1.0,
+          "max": 50.0
+        }
+      ]
     }
   ]
 }

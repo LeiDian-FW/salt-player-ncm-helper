@@ -33,9 +33,15 @@ public class MainPlugin extends SpwPlugin {
     private AutoCloseable hotkey;
     private Path dataDir;
     private History history;
+    private NeteaseClient netease;
 
     private volatile boolean lyricsOnline = true;
     private volatile boolean writeLrc = true;
+    private volatile boolean neteaseEnabled = false;
+    private volatile int neteaseLimit = 10;
+    private volatile String neteasePlaylistId = "";
+    private volatile String neteaseKeyword = "";
+    private volatile String neteaseLibrary = "D:\\music";
 
     public MainPlugin(PluginContext pluginContext) {
         super(pluginContext);
@@ -55,6 +61,7 @@ public class MainPlugin extends SpwPlugin {
 
             lyricsService = new NeteaseLyrics(dataDir.resolve("lyrics-cache"));
             history = new History(dataDir, 30);
+            netease = new NeteaseClient(dataDir);
             job = new NcmJob(dataDir, lyricsService, history);
             reloadSettings();
 
@@ -123,6 +130,11 @@ public class MainPlugin extends SpwPlugin {
         lyricsOnline = cfgBool("lyrics.online", true);
         writeLrc = cfgBool("lyrics.write_lrc", true);
         if (history != null) history.setRetainDays(cfgInt("history.days", 30));
+        neteaseEnabled = cfgBool("netease.enabled", false);
+        neteaseLimit = cfgInt("netease.limit", 10);
+        neteasePlaylistId = cfgString("netease.playlist_id", "");
+        neteaseKeyword = cfgString("netease.search_keyword", "");
+        neteaseLibrary = lib.isBlank() ? "D:\\music" : lib;
 
         List<Path> sources = new ArrayList<>();
         for (String part : src.split(";")) {
@@ -230,6 +242,170 @@ public class MainPlugin extends SpwPlugin {
         }
         p.job.triggerOnce(true);
         toast("已开始扫描并处理 NCM…");
+    }
+
+    // ---------------- 网易云（实验性） ----------------
+    private interface SongSource {
+        java.util.List<NeteaseClient.Song> load() throws Exception;
+    }
+
+    /** 配置页「扫码登录」按钮入口 */
+    public static void onNeteaseLogin() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        if (!p.neteaseEnabled) {
+            toast("请先在配置中启用网易云功能");
+            return;
+        }
+        toast("正在生成登录二维码…");
+        Thread t = new Thread(() -> {
+            try {
+                String key = p.netease.requestQrKey();
+                Path png = p.netease.writeQrPng(key, "netease-login-qr.png");
+                java.awt.Desktop.getDesktop().open(png.toFile());
+                Log.info("已打开网易云登录二维码，请用网易云 App 扫码（120 秒内有效）");
+                long deadline = System.currentTimeMillis() + 120_000;
+                boolean confirmed = false;
+                while (System.currentTimeMillis() < deadline) {
+                    NeteaseClient.QrStatus st = p.netease.pollQr(key);
+                    if (st.code == 803 && st.success) {
+                        String nick = p.netease.nickname();
+                        Log.info("网易云登录成功"
+                                + (nick.isEmpty() ? "" : ": " + nick));
+                        toast("网易云登录成功" + (nick.isEmpty() ? "" : "：" + nick));
+                        return;
+                    }
+                    if (st.code == 800) {
+                        toast("二维码已过期，请重试");
+                        return;
+                    }
+                    if (st.code == 802 && !confirmed) {
+                        confirmed = true;
+                        toast("已扫码，请在手机上确认登录");
+                    }
+                    Thread.sleep(2000);
+                }
+                toast("登录超时，请重试");
+            } catch (Throwable e) {
+                Log.error("网易云登录失败: " + e);
+                toast("登录失败: " + e.getMessage());
+            }
+        }, "netease-login");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** 配置页「登录状态」按钮入口 */
+    public static void onNeteaseStatus() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        if (!p.netease.isLoggedIn()) {
+            toast("网易云：未登录");
+            return;
+        }
+        p.netease.refreshProfile();
+        String nick = p.netease.nickname();
+        toast("网易云：已登录" + (nick.isEmpty() ? "" : "（" + nick + "）"));
+    }
+
+    /** 配置页「退出登录」按钮入口 */
+    public static void onNeteaseLogout() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        p.netease.logout();
+        toast("已退出网易云账号");
+    }
+
+    /** 配置页「下载歌单」按钮入口 */
+    public static void onDownloadPlaylist() {
+        MainPlugin p = INSTANCE;
+        if (!neteaseReady()) return;
+        String idText = p.neteasePlaylistId.strip();
+        long id;
+        try {
+            id = Long.parseLong(idText);
+        } catch (Exception e) {
+            toast("请先在配置中填写歌单 ID（纯数字）");
+            return;
+        }
+        downloadAsync("下载歌单", () -> p.netease.playlist(id));
+    }
+
+    /** 配置页「搜索并下载」按钮入口 */
+    public static void onSearchDownload() {
+        MainPlugin p = INSTANCE;
+        if (!neteaseReady()) return;
+        String kw = p.neteaseKeyword.strip();
+        if (kw.isEmpty()) {
+            toast("请先在配置中填写搜索关键词");
+            return;
+        }
+        downloadAsync("搜索下载", () -> p.netease.search(kw, p.neteaseLimit));
+    }
+
+    /** 配置页「下载我喜欢的音乐」按钮入口 */
+    public static void onDownloadLikes() {
+        MainPlugin p = INSTANCE;
+        if (!neteaseReady()) return;
+        downloadAsync("下载我喜欢的音乐", () -> p.netease.myLikes());
+    }
+
+    private static boolean neteaseReady() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return false;
+        }
+        if (!p.neteaseEnabled) {
+            toast("请先在配置中启用网易云功能");
+            return false;
+        }
+        if (!p.netease.isLoggedIn()) {
+            toast("请先扫码登录网易云");
+            return false;
+        }
+        return true;
+    }
+
+    private static void downloadAsync(String what, SongSource source) {
+        MainPlugin p = INSTANCE;
+        Path library = Paths.get(p.neteaseLibrary);
+        toast("开始" + what + "…");
+        Thread t = new Thread(() -> {
+            try {
+                java.util.List<NeteaseClient.Song> songs = source.load();
+                if (songs.isEmpty()) {
+                    toast(what + "：没有可下载的歌曲");
+                    return;
+                }
+                NeteaseDownloader dl = new NeteaseDownloader(p.netease, library, p.history);
+                dl.download(songs, p.neteaseLimit, true, new NeteaseDownloader.Progress() {
+                    @Override
+                    public void log(String line) {
+                        Log.info(line);
+                    }
+
+                    @Override
+                    public void done(String summary) {
+                        toast(summary + "；如未显示请扫描音乐库");
+                    }
+                });
+            } catch (Throwable e) {
+                Log.error(what + "失败: " + e);
+                toast(what + "失败: " + e.getMessage());
+            }
+        }, "netease-download");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** 配置页「打开转换记录」按钮入口 */

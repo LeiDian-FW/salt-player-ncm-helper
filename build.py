@@ -23,6 +23,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 API_JAR = os.path.join(BASE, "libs", "api.jar")
 PF4J_JAR = os.path.join(BASE, "libs", "pf4j.jar")
 KOTLIN_STDLIB = os.path.join(BASE, "libs", "kotlin-stdlib.jar")
+ZXING_JAR = os.path.join(BASE, "libs", "zxing-core.jar")
 SRC = os.path.join(BASE, "src", "main", "java")
 RES = os.path.join(BASE, "src", "main", "resources")
 BUILD = os.path.join(BASE, "build")
@@ -32,7 +33,7 @@ LIBS_OUT = os.path.join(BUILD, "libs")
 
 PLUGIN_ID = "io.github.spwncm.ncmhelper"
 PLUGIN_CLASS = "io.github.spwncm.ncmhelper.MainPlugin"
-PLUGIN_VERSION = "1.1.0"
+PLUGIN_VERSION = "1.2.0"
 PLUGIN_NAME = "NCM 助手"
 PLUGIN_DESC = "自动解密网易云 NCM、按歌手/专辑归档、内嵌封面并在线补全歌词"
 PLUGIN_PROVIDER = "spwncm"
@@ -69,7 +70,7 @@ def check_jdk(javac):
 
 
 def ensure_deps():
-    missing = [p for p in (API_JAR, PF4J_JAR, KOTLIN_STDLIB) if not os.path.isfile(p)]
+    missing = [p for p in (API_JAR, PF4J_JAR, KOTLIN_STDLIB, ZXING_JAR) if not os.path.isfile(p)]
     if missing:
         print("缺少依赖，自动运行 get_deps.py …")
         subprocess.run([sys.executable, os.path.join(BASE, "get_deps.py")], check=True)
@@ -126,7 +127,7 @@ def main():
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d, exist_ok=True)
 
-    cp = os.pathsep.join([API_JAR, PF4J_JAR, KOTLIN_STDLIB])
+    cp = os.pathsep.join([API_JAR, PF4J_JAR, KOTLIN_STDLIB, ZXING_JAR])
     sources = collect_sources()
     print("编译 %d 个 Java 文件…" % len(sources))
     r = subprocess.run([javac, "-encoding", "UTF-8", "-proc:full",
@@ -171,7 +172,8 @@ def main():
                 if name.endswith("/"):
                     continue
                 z.writestr("classes/" + name, inner.read(name))
-        z.writestr("lib/", b"")
+        # lib/ = 运行时依赖（宿主通过插件类加载器加载）
+        z.writestr("lib/zxing-core.jar", open(ZXING_JAR, "rb").read())
 
     print("\n构建完成: %s (%.1f KB)" % (spmod, os.path.getsize(spmod) / 1024))
     print("安装: Salt Player → 创意工坊 → 模组管理 → 导入模组 → 选择该文件")
