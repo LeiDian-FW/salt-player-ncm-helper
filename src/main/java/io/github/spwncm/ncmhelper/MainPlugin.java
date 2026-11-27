@@ -41,6 +41,7 @@ public class MainPlugin extends SpwPlugin {
     private volatile int neteaseLimit = 10;
     private volatile String neteasePlaylistId = "";
     private volatile String neteaseKeyword = "";
+    private volatile String neteaseCookie = "";
     private volatile String neteaseLibrary = "D:\\music";
 
     public MainPlugin(PluginContext pluginContext) {
@@ -134,6 +135,7 @@ public class MainPlugin extends SpwPlugin {
         neteaseLimit = cfgInt("netease.limit", 10);
         neteasePlaylistId = cfgString("netease.playlist_id", "");
         neteaseKeyword = cfgString("netease.search_keyword", "");
+        neteaseCookie = cfgString("netease.cookie", "");
         neteaseLibrary = lib.isBlank() ? "D:\\music" : lib;
 
         List<Path> sources = new ArrayList<>();
@@ -261,6 +263,32 @@ public class MainPlugin extends SpwPlugin {
             return;
         }
         NeteaseLoginDialog.show(p.netease);
+    }
+
+    /** 配置页「使用 Cookie 登录」按钮入口（风控 8821 时推荐） */
+    public static void onNeteaseCookieLogin() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        if (!p.neteaseEnabled) {
+            toast("请先在配置中启用网易云功能");
+            return;
+        }
+        String raw = p.neteaseCookie == null ? "" : p.neteaseCookie.strip();
+        if (raw.isEmpty()) {
+            toast("请先在配置中粘贴网易云 Cookie（MUSIC_U=...）");
+            return;
+        }
+        boolean ok = p.netease.loginWithCookie(raw);
+        if (ok) {
+            String nick = p.netease.nickname();
+            toast("网易云登录成功" + (nick.isEmpty() ? "" : "：" + nick));
+        } else {
+            toast("Cookie 无效或已过期，请重新复制 MUSIC_U");
+            Log.warn("Cookie 登录失败：未解析到有效 MUSIC_U");
+        }
     }
 
     /** 配置页「登录状态」按钮入口 */

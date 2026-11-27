@@ -139,6 +139,20 @@
           "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseStatus"
         },
         {
+          "key": "netease.cookie",
+          "type": "edittext",
+          "title": "登录 Cookie（MUSIC_U）",
+          "summary": "扫码提示 8821/请求频繁时使用：从浏览器复制 MUSIC_U=... 粘贴到此处",
+          "default_value": ""
+        },
+        {
+          "type": "button",
+          "title": "使用 Cookie 登录",
+          "summary": "校验并保存粘贴的 Cookie（仅保存在本机）",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseCookieLogin"
+        },
+        {
           "type": "button",
           "title": "退出登录",
           "summary": "清除本地保存的登录 Cookie",

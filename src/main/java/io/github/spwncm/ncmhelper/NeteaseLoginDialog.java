@@ -54,11 +54,11 @@ public final class NeteaseLoginDialog {
         Thread prepare = new Thread(() -> {
             try {
                 Log.info("正在申请网易云登录二维码…");
-                String key = client.requestQrKey();
+                NeteaseClient.QrSession session = client.requestQrKey();
                 BufferedImage img = QrCode.toImage(
-                        "https://music.163.com/login?codekey=" + key, QR_SIZE);
+                        "https://music.163.com/login?codekey=" + session.key, QR_SIZE);
                 Log.info("二维码已生成，等待扫码（180 秒）");
-                SwingUtilities.invokeLater(() -> openCard(client, key, img));
+                SwingUtilities.invokeLater(() -> openCard(client, session, img));
             } catch (Throwable e) {
                 Log.error("生成登录二维码失败: " + e);
                 MainPlugin.toast("生成登录二维码失败: " + e.getMessage());
@@ -68,7 +68,7 @@ public final class NeteaseLoginDialog {
         prepare.start();
     }
 
-    private static void openCard(NeteaseClient client, String key, BufferedImage image) {
+    private static void openCard(NeteaseClient client, NeteaseClient.QrSession session, BufferedImage image) {
         Window owner = findOwner();
         JDialog dialog = new JDialog(owner instanceof Frame f ? f : null, "网易云扫码登录");
         dialog.setUndecorated(true);
@@ -181,7 +181,7 @@ public final class NeteaseLoginDialog {
             int rateLimitHits = 0;
             try {
                 while (dialog.isDisplayable() && System.currentTimeMillis() < deadline) {
-                    NeteaseClient.QrStatus st = client.pollQr(key);
+                    NeteaseClient.QrStatus st = client.pollQr(session);
                     if (st.code == 803 && st.success) {
                         String nick = client.nickname();
                         dot.setColor(OK);

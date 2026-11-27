@@ -33,6 +33,9 @@ public final class NeteaseClient {
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     private static final String LOGIN_URL = "https://music.163.com/login?codekey=";
+    /** eapi 加密密钥（网易云 PC 客户端公开协议常量） */
+    private static final byte[] EAPI_KEY = "e82ckenh8dichen8".getBytes(StandardCharsets.US_ASCII);
+    private static final String EAPI_DIVIDER = "-36cd479b6b5-";
 
     /** 歌曲信息 */
     public static final class Song {
@@ -45,6 +48,19 @@ public final class NeteaseClient {
 
         public String artistText() {
             return String.join("/", artists);
+        }
+    }
+
+    /** 登录会话：eapi（新客户端协议）或 api（旧协议） */
+    public static final class QrSession {
+        public final String key;
+        public final String protocol;
+        public final int type;
+
+        QrSession(String key, String protocol, int type) {
+            this.key = key;
+            this.protocol = protocol;
+            this.type = type;
         }
     }
 
@@ -105,12 +121,35 @@ public final class NeteaseClient {
     }
 
     // ---------------- 二维码登录 ----------------
-    /** 申请登录二维码 key */
-    public String requestQrKey() throws IOException {
-        Map<String, Object> d = getJson("https://music.163.com/api/login/qrcode/unikey?type=1", false);
-        String key = Json.str(d, "unikey", "");
-        if (key.isEmpty()) throw new IOException("申请登录二维码失败: " + Json.lng(d, "code", 0));
-        return key;
+    /** 申请登录二维码 key：优先 eapi（新客户端协议，带设备指纹），失败再回退旧 api */
+    public QrSession requestQrKey() throws IOException {
+        for (int type : new int[]{3, 1}) {
+            try {
+                Resp r = eapi("/eapi/login/qrcode/unikey", mapOf("type", type));
+                Map<String, Object> d = Json.asMap(Json.parse(r.body));
+                String key = Json.str(d, "unikey", "");
+                if (!key.isEmpty()) {
+                    Log.info("二维码来源: eapi (type=" + type + ")");
+                    return new QrSession(key, "eapi", type);
+                }
+                Log.warn("eapi unikey 失败 type=" + type + " code=" + Json.lng(d, "code", 0)
+                        + " body=" + abbreviate(r.body));
+            } catch (Exception e) {
+                Log.warn("eapi unikey 异常 type=" + type + ": " + e.getMessage());
+            }
+        }
+        try {
+            Map<String, Object> d = getJson("https://music.163.com/api/login/qrcode/unikey?type=1", false);
+            String key = Json.str(d, "unikey", "");
+            if (!key.isEmpty()) {
+                Log.info("二维码来源: api (旧协议)");
+                return new QrSession(key, "api", 1);
+            }
+            Log.warn("api unikey 失败 code=" + Json.lng(d, "code", 0) + " body=" + abbreviate(d.toString()));
+        } catch (Exception e) {
+            Log.warn("api unikey 异常: " + e.getMessage());
+        }
+        throw new IOException("申请登录二维码失败（eapi/api 均失败），可能被网易云风控，请稍后再试");
     }
 
     /** 生成二维码图片（内容为网易云登录链接），返回 PNG 路径 */
@@ -118,6 +157,16 @@ public final class NeteaseClient {
         Path out = dataDir.resolve(fileName);
         QrCode.writePng(LOGIN_URL + key, out, 420);
         return out;
+    }
+
+    /** 按会话协议轮询扫码状态 */
+    public QrStatus pollQr(QrSession session) throws IOException {
+        if ("eapi".equals(session.protocol)) {
+            Resp r = eapi("/eapi/login/qrcode/client/login",
+                    mapOf("key", session.key, "type", session.type));
+            return handlePoll(r);
+        }
+        return pollQr(session.key);
     }
 
     /** 轮询扫码状态：801 等待扫码 / 802 待确认 / 803 成功 / 800 过期 */
@@ -163,8 +212,8 @@ public final class NeteaseClient {
         return st;
     }
 
-    /** 获取账号信息（昵称 / uid） */
-    public void refreshProfile() {
+    /** 获取账号信息（昵称 / uid），返回是否成功 */
+    public boolean refreshProfile() {
         try {
             Map<String, Object> d = getJson("https://music.163.com/api/nuser/account/get", true);
             Map<String, Object> account = Json.asMap(d.get("account"));
@@ -172,9 +221,30 @@ public final class NeteaseClient {
             uid = Json.lng(account, "id", 0);
             String nn = Json.str(profile, "nickname", "");
             if (!nn.isEmpty()) nickname = nn;
+            return uid != 0;
         } catch (Exception e) {
             log("获取账号信息失败: " + e.getMessage());
+            return false;
         }
+    }
+
+    /** 用已有 Cookie 登录（支持粘贴完整 Cookie 串或仅 MUSIC_U 值） */
+    public boolean loginWithCookie(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        String text = raw.strip();
+        if (!text.contains("=")) text = "MUSIC_U=" + text;
+        absorbCookieString(text);
+        if (!isLoggedIn()) return false;
+        saveCookie();
+        syncFromStore();
+        boolean verified = refreshProfile();
+        if (verified) {
+            Log.info("使用 Cookie 登录成功" + (nickname.isEmpty() ? "" : ": " + nickname)
+                    + "（uid=" + uid + "）");
+        } else {
+            Log.warn("Cookie 已保存但账号校验失败（Cookie 过期或网络异常）");
+        }
+        return verified;
     }
 
     public void logout() {
@@ -242,6 +312,33 @@ public final class NeteaseClient {
         return null;
     }
 
+    /** 统一处理轮询响应 */
+    private QrStatus handlePoll(Resp r) throws IOException {
+        QrStatus st = new QrStatus();
+        Map<String, Object> d = Json.asMap(Json.parse(r.body));
+        st.code = (int) Json.lng(d, "code", 0);
+        st.message = Json.str(d, "message", "");
+        if (st.code == 803) {
+            absorbCookies(r.setCookies);
+            absorbCookieString(Json.str(d, "cookie", ""));
+            if (!isLoggedIn()) {
+                syncFromStore();
+            }
+            if (isLoggedIn()) {
+                saveCookie();
+                st.success = true;
+                Log.info("登录成功，已保存 Cookie: " + cookies.keySet());
+                refreshProfile();
+            } else {
+                Log.warn("扫码已确认，但未拿到登录 Cookie（响应头数=" + r.setCookies.size()
+                        + "，响应体=" + abbreviate(r.body) + "）");
+            }
+        } else if (st.code != 801 && st.code != 802) {
+            Log.warn("扫码轮询返回 code=" + st.code + " " + st.message + " body=" + abbreviate(r.body));
+        }
+        return st;
+    }
+
     /** 点赞 / 取消点赞（需要登录） */
     public boolean setLike(long songId, boolean like) throws IOException {
         if (!isLoggedIn()) throw new IOException("请先登录");
@@ -283,6 +380,90 @@ public final class NeteaseClient {
         if (lower.endsWith(".mp3")) return ".mp3";
         if (lower.endsWith(".m4a")) return ".m4a";
         return ".mp3";
+    }
+
+    // ---------------- eapi ----------------
+    private Resp eapi(String path, Map<String, Object> data) throws IOException {
+        String json = JsonOut.write(data);
+        String md5 = md5Hex("nobody" + path + "use" + json + "md5forencrypt");
+        String text = path + EAPI_DIVIDER + json + EAPI_DIVIDER + md5;
+        byte[] enc = aesEcbEncrypt(text.getBytes(StandardCharsets.UTF_8), EAPI_KEY);
+        String params = hexUpper(enc);
+        String url = "https://music.163.com" + path;
+        HttpURLConnection conn = open(url, "POST", true);
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        conn.setRequestProperty("Cookie", eapiCookie());
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(("params=" + params).getBytes(StandardCharsets.US_ASCII));
+        }
+        Resp r = new Resp();
+        r.body = readAll(conn);
+        r.setCookies = readSetCookies(conn);
+        conn.disconnect();
+        absorbCookies(r.setCookies);
+        return r;
+    }
+
+    private String eapiCookie() {
+        String base = "os=pc; appver=8.10.05; osver=Microsoft-Windows-10.0.19045; "
+                + "deviceId=" + deviceId();
+        return cookie.isEmpty() ? base : cookie + "; " + base;
+    }
+
+    private String deviceId() {
+        Path f = dataDir.resolve("netease-device-id.txt");
+        try {
+            if (Files.isRegularFile(f)) {
+                String id = Files.readString(f, StandardCharsets.UTF_8).strip();
+                if (!id.isEmpty()) return id;
+            }
+        } catch (IOException ignored) {
+        }
+        String id = java.util.UUID.randomUUID().toString().replace("-", "").toUpperCase();
+        try {
+            Files.createDirectories(dataDir);
+            Files.writeString(f, id, StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+        }
+        return id;
+    }
+
+    private static byte[] aesEcbEncrypt(byte[] data, byte[] key) {
+        try {
+            int pad = 16 - data.length % 16;
+            byte[] padded = java.util.Arrays.copyOf(data, data.length + pad);
+            java.util.Arrays.fill(padded, data.length, padded.length, (byte) pad);
+            javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES/ECB/NoPadding");
+            c.init(javax.crypto.Cipher.ENCRYPT_MODE, new javax.crypto.spec.SecretKeySpec(key, "AES"));
+            return c.doFinal(padded);
+        } catch (Exception e) {
+            throw new IllegalStateException("eapi 加密失败", e);
+        }
+    }
+
+    private static String hexUpper(byte[] data) {
+        StringBuilder sb = new StringBuilder(data.length * 2);
+        for (byte b : data) sb.append(String.format("%02X", b));
+        return sb.toString();
+    }
+
+    private static String md5Hex(String text) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("MD5");
+            byte[] d = md.digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static Map<String, Object> mapOf(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put(String.valueOf(kv[i]), kv[i + 1]);
+        return m;
     }
 
     // ---------------- HTTP ----------------
@@ -469,6 +650,52 @@ public final class NeteaseClient {
             sb.append(e.getKey()).append('=').append(e.getValue());
         }
         cookie = sb.toString();
+    }
+
+    /** 极简 JSON 序列化（eapi 参数用） */
+    static final class JsonOut {
+        static String write(Object o) {
+            if (o == null) return "null";
+            if (o instanceof String str) return quote(str);
+            if (o instanceof Number || o instanceof Boolean) return String.valueOf(o);
+            if (o instanceof Map<?, ?> m) {
+                StringBuilder sb = new StringBuilder("{");
+                boolean first = true;
+                for (Map.Entry<?, ?> e : m.entrySet()) {
+                    if (!first) sb.append(',');
+                    first = false;
+                    sb.append(quote(String.valueOf(e.getKey()))).append(':').append(write(e.getValue()));
+                }
+                return sb.append('}').toString();
+            }
+            if (o instanceof java.util.List<?> list) {
+                StringBuilder sb = new StringBuilder("[");
+                for (int i = 0; i < list.size(); i++) {
+                    if (i > 0) sb.append(',');
+                    sb.append(write(list.get(i)));
+                }
+                return sb.append(']').toString();
+            }
+            return quote(String.valueOf(o));
+        }
+
+        static String quote(String s) {
+            StringBuilder sb = new StringBuilder("\"");
+            for (char c : s.toCharArray()) {
+                switch (c) {
+                    case '"' -> sb.append("\\\"");
+                    case '\\' -> sb.append("\\\\");
+                    case '\n' -> sb.append("\\n");
+                    case '\r' -> sb.append("\\r");
+                    case '\t' -> sb.append("\\t");
+                    default -> {
+                        if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                        else sb.append(c);
+                    }
+                }
+            }
+            return sb.append('"').toString();
+        }
     }
 
     private static String abbreviate(String s) {
