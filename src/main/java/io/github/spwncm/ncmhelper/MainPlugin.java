@@ -260,42 +260,7 @@ public class MainPlugin extends SpwPlugin {
             toast("请先在配置中启用网易云功能");
             return;
         }
-        toast("正在生成登录二维码…");
-        Thread t = new Thread(() -> {
-            try {
-                String key = p.netease.requestQrKey();
-                Path png = p.netease.writeQrPng(key, "netease-login-qr.png");
-                java.awt.Desktop.getDesktop().open(png.toFile());
-                Log.info("已打开网易云登录二维码，请用网易云 App 扫码（120 秒内有效）");
-                long deadline = System.currentTimeMillis() + 120_000;
-                boolean confirmed = false;
-                while (System.currentTimeMillis() < deadline) {
-                    NeteaseClient.QrStatus st = p.netease.pollQr(key);
-                    if (st.code == 803 && st.success) {
-                        String nick = p.netease.nickname();
-                        Log.info("网易云登录成功"
-                                + (nick.isEmpty() ? "" : ": " + nick));
-                        toast("网易云登录成功" + (nick.isEmpty() ? "" : "：" + nick));
-                        return;
-                    }
-                    if (st.code == 800) {
-                        toast("二维码已过期，请重试");
-                        return;
-                    }
-                    if (st.code == 802 && !confirmed) {
-                        confirmed = true;
-                        toast("已扫码，请在手机上确认登录");
-                    }
-                    Thread.sleep(2000);
-                }
-                toast("登录超时，请重试");
-            } catch (Throwable e) {
-                Log.error("网易云登录失败: " + e);
-                toast("登录失败: " + e.getMessage());
-            }
-        }, "netease-login");
-        t.setDaemon(true);
-        t.start();
+        NeteaseLoginDialog.show(p.netease);
     }
 
     /** 配置页「登录状态」按钮入口 */

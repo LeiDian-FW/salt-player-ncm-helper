@@ -18,7 +18,8 @@ public final class QrCode {
     private QrCode() {
     }
 
-    public static void writePng(String text, Path out, int size) throws java.io.IOException {
+    /** 生成二维码图像（供界面显示） */
+    public static BufferedImage toImage(String text, int size) throws java.io.IOException {
         try {
             Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
             hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
@@ -33,12 +34,16 @@ public final class QrCode {
                     img.setRGB(x, y, matrix.get(x, y) ? 0xFF000000 : 0xFFFFFFFF);
                 }
             }
-            Files.createDirectories(out.getParent());
-            ImageIO.write(img, "png", out.toFile());
-        } catch (java.io.IOException e) {
-            throw e;
+            return img;
         } catch (Exception e) {
             throw new java.io.IOException("生成二维码失败: " + e, e);
         }
+    }
+
+    /** 生成并保存二维码 PNG */
+    public static void writePng(String text, Path out, int size) throws java.io.IOException {
+        BufferedImage img = toImage(text, size);
+        Files.createDirectories(out.getParent());
+        ImageIO.write(img, "png", out.toFile());
     }
 }

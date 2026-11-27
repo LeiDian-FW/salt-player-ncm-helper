@@ -5,6 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.CookieStore;
+import java.net.HttpCookie;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -52,6 +57,8 @@ public final class NeteaseClient {
 
     private final Path dataDir;
     private final Path cookieFile;
+    private final java.util.Map<String, String> cookies = new java.util.concurrent.ConcurrentHashMap<>();
+    private final CookieManager cookieManager;
     private volatile String cookie = "";
     private volatile String nickname = "";
     private volatile long uid = 0L;
@@ -61,6 +68,17 @@ public final class NeteaseClient {
     public NeteaseClient(Path dataDir) {
         this.dataDir = dataDir;
         this.cookieFile = dataDir.resolve("netease-cookie.txt");
+        // 进程级 CookieManager：自动处理重定向与多次 Set-Cookie，比手工解析响应头可靠
+        CookieManager existing = null;
+        CookieHandler def = CookieHandler.getDefault();
+        if (def instanceof CookieManager cm) {
+            existing = cm;
+        }
+        if (existing == null) {
+            existing = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
+            CookieHandler.setDefault(existing);
+        }
+        this.cookieManager = existing;
         loadCookie();
     }
 
@@ -70,7 +88,8 @@ public final class NeteaseClient {
     }
 
     public boolean isLoggedIn() {
-        return cookie.contains("MUSIC_U=");
+        String v = cookies.get("MUSIC_U");
+        return v != null && !v.isEmpty();
     }
 
     public String nickname() {
@@ -104,22 +123,30 @@ public final class NeteaseClient {
     /** 轮询扫码状态：801 等待扫码 / 802 待确认 / 803 成功 / 800 过期 */
     public QrStatus pollQr(String key) throws IOException {
         QrStatus st = new QrStatus();
-        Resp r = get("https://music.163.com/api/login/qrcode/client/login?key="
-                + enc(key) + "&type=1", false);
+        String url = "https://music.163.com/api/login/qrcode/client/login?key="
+                + enc(key) + "&type=1";
+        Resp r = get(url, false);
         Map<String, Object> d = Json.asMap(Json.parse(r.body));
         st.code = (int) Json.lng(d, "code", 0);
         st.message = Json.str(d, "message", "");
         if (st.code == 803) {
-            String c = extractCookie(r.setCookies, "");
-            if (c.isEmpty()) {
-                // 部分版本把 cookie 放在响应体
-                c = extractCookie(null, Json.str(d, "cookie", ""));
+            // cookie 可能在多次 Set-Cookie 里，也可能在响应体 cookie 字段
+            absorbCookies(r.setCookies);
+            absorbCookieString(Json.str(d, "cookie", ""));
+            if (!isLoggedIn()) {
+                // 个别版本第二次轮询才下发 cookie
+                sleepMs(800);
+                absorbCookies(get(url, false).setCookies);
             }
-            if (!c.isEmpty()) {
-                cookie = c;
+            syncFromStore();
+            if (isLoggedIn()) {
                 saveCookie();
                 st.success = true;
                 refreshProfile();
+            } else {
+                Log.warn("扫码已确认，但未拿到登录 Cookie（响应头数=" + r.setCookies.size()
+                        + "，CookieStore=" + cookieManager.getCookieStore().getCookies().size()
+                        + "，响应体=" + abbreviate(r.body) + "）");
             }
         }
         return st;
@@ -140,9 +167,13 @@ public final class NeteaseClient {
     }
 
     public void logout() {
+        cookies.clear();
         cookie = "";
         nickname = "";
         uid = 0;
+        for (HttpCookie c : new ArrayList<>(cookieManager.getCookieStore().getCookies())) {
+            cookieManager.getCookieStore().remove(null, c);
+        }
         try {
             Files.deleteIfExists(cookieFile);
         } catch (IOException ignored) {
@@ -257,9 +288,10 @@ public final class NeteaseClient {
     private Resp get(String url, boolean withCookie) throws IOException {
         HttpURLConnection conn = open(url, "GET", withCookie);
         Resp r = new Resp();
-        r.setCookies = conn.getHeaderFields().getOrDefault("Set-Cookie", List.of());
         r.body = readAll(conn);
+        r.setCookies = readSetCookies(conn);
         conn.disconnect();
+        absorbCookies(r.setCookies);
         return r;
     }
 
@@ -270,8 +302,8 @@ public final class NeteaseClient {
             os.write(body.getBytes(StandardCharsets.UTF_8));
         }
         Resp r = new Resp();
-        r.setCookies = conn.getHeaderFields().getOrDefault("Set-Cookie", List.of());
         r.body = readAll(conn);
+        r.setCookies = readSetCookies(conn);
         conn.disconnect();
         return r;
     }
@@ -351,10 +383,108 @@ public final class NeteaseClient {
         return sb.toString();
     }
 
+    /** 从进程 CookieManager 同步 cookie（覆盖重定向场景） */
+    private void syncFromStore() {
+        for (HttpCookie c : cookieManager.getCookieStore().getCookies()) {
+            if (c.getValue() != null && !c.getValue().isEmpty()) {
+                cookies.put(c.getName(), c.getValue());
+            }
+        }
+        rebuildCookieHeader();
+    }
+
+    private static List<HttpCookie> parseCookies(String text) {
+        List<HttpCookie> out = new ArrayList<>();
+        if (text == null) return out;
+        for (String part : text.split(";")) {
+            String p = part.strip();
+            int eq = p.indexOf('=');
+            if (eq <= 0) continue;
+            try {
+                out.add(new HttpCookie(p.substring(0, eq).strip(), p.substring(eq + 1).strip()));
+            } catch (Exception ignored) {
+            }
+        }
+        return out;
+    }
+
+    /** 逐条读取所有 Set-Cookie 响应头（不再依赖 Map 的键大小写/合并行为） */
+    private static List<String> readSetCookies(HttpURLConnection conn) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; ; i++) {
+            String key = conn.getHeaderFieldKey(i);
+            if (key == null) {
+                if (i == 0) continue;
+                break;
+            }
+            String val = conn.getHeaderField(i);
+            if (val != null && key.equalsIgnoreCase("Set-Cookie")) out.add(val);
+        }
+        return out;
+    }
+
+    private void absorbCookies(List<String> setCookies) {
+        if (setCookies == null) return;
+        for (String raw : setCookies) {
+            if (raw == null) continue;
+            String pair = raw.split(";", 2)[0].strip();
+            int eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            String name = pair.substring(0, eq).strip();
+            String value = pair.substring(eq + 1).strip();
+            if (!name.isEmpty() && !value.isEmpty()) cookies.put(name, value);
+        }
+        rebuildCookieHeader();
+    }
+
+    private void absorbCookieString(String text) {
+        if (text == null || text.isBlank()) return;
+        for (String part : text.split(";")) {
+            String p = part.strip();
+            int eq = p.indexOf('=');
+            if (eq <= 0) continue;
+            String name = p.substring(0, eq).strip();
+            String value = p.substring(eq + 1).strip();
+            if (!name.isEmpty() && !value.isEmpty()) cookies.put(name, value);
+        }
+        rebuildCookieHeader();
+    }
+
+    private void rebuildCookieHeader() {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : cookies.entrySet()) {
+            if (sb.length() > 0) sb.append("; ");
+            sb.append(e.getKey()).append('=').append(e.getValue());
+        }
+        cookie = sb.toString();
+    }
+
+    private static String abbreviate(String s) {
+        if (s == null) return "";
+        String t = s.replaceAll("\\s+", " ");
+        return t.length() <= 160 ? t : t.substring(0, 160) + "…";
+    }
+
+    private static void sleepMs(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private void loadCookie() {
         try {
             if (Files.isRegularFile(cookieFile)) {
-                cookie = Files.readString(cookieFile, StandardCharsets.UTF_8).strip();
+                String text = Files.readString(cookieFile, StandardCharsets.UTF_8).strip();
+                absorbCookieString(text);
+                try {
+                    java.net.URI uri = new java.net.URI("https://music.163.com");
+                    for (HttpCookie c : parseCookies(text)) {
+                        cookieManager.getCookieStore().add(uri, c);
+                    }
+                } catch (java.net.URISyntaxException ignored) {
+                }
             }
         } catch (IOException ignored) {
         }
