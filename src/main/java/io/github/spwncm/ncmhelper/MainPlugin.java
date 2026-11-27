@@ -39,6 +39,7 @@ public class MainPlugin extends SpwPlugin {
     private volatile boolean writeLrc = true;
     private volatile boolean neteaseEnabled = false;
     private volatile int neteaseLimit = 10;
+    private volatile boolean neteaseLimitValid = true;
     private volatile String neteasePlaylistId = "";
     private volatile String neteaseKeyword = "";
     private volatile String neteaseCookie = "";
@@ -132,7 +133,25 @@ public class MainPlugin extends SpwPlugin {
         writeLrc = cfgBool("lyrics.write_lrc", true);
         if (history != null) history.setRetainDays(cfgInt("history.days", 30));
         neteaseEnabled = cfgBool("netease.enabled", false);
-        neteaseLimit = cfgInt("netease.limit", 10);
+        String limitRaw = cfgString("netease.limit", "10").strip();
+        if (limitRaw.matches("\\d+")) {
+            try {
+                int v = Integer.parseInt(limitRaw);
+                if (v >= 1 && v <= 50) {
+                    neteaseLimit = v;
+                    neteaseLimitValid = true;
+                } else {
+                    neteaseLimit = Math.max(1, Math.min(50, v));
+                    neteaseLimitValid = false;
+                }
+            } catch (NumberFormatException e) {
+                neteaseLimit = 10;
+                neteaseLimitValid = false;
+            }
+        } else {
+            neteaseLimit = 10;
+            neteaseLimitValid = false;
+        }
         neteasePlaylistId = cfgString("netease.playlist_id", "");
         neteaseKeyword = cfgString("netease.search_keyword", "");
         neteaseCookie = cfgString("netease.cookie", "");
@@ -414,34 +433,74 @@ public class MainPlugin extends SpwPlugin {
     private static void downloadAsync(String what, SongSource source) {
         MainPlugin p = INSTANCE;
         Path library = Paths.get(p.neteaseLibrary);
-        toast("开始" + what + "…");
+        if (!p.neteaseLimitValid) {
+            toast("「每次最多下载数」需填写 1-50 的整数");
+            return;
+        }
+        DownloadProgressDialog progress = DownloadProgressDialog.show(what);
         Thread t = new Thread(() -> {
             try {
+                progress.setPhase("正在获取歌曲列表…");
                 java.util.List<NeteaseClient.Song> songs = source.load();
                 if (songs.isEmpty()) {
+                    progress.error("没有可下载的歌曲");
                     toast(what + "：没有可下载的歌曲");
                     return;
                 }
                 NeteaseDownloader dl = new NeteaseDownloader(p.netease, library, p.history);
-                dl.download(songs, p.neteaseLimit, true, new NeteaseDownloader.Progress() {
-                    @Override
-                    public void log(String line) {
-                        Log.info(line);
-                    }
-
-                    @Override
-                    public void done(String summary) {
-                        toast(summary + "；如未显示请扫描音乐库");
-                    }
-                });
+                dl.download(songs, p.neteaseLimit, true, new DownloadListener(progress));
             } catch (Throwable e) {
                 Log.error(what + "失败: " + e);
+                progress.error(e.getMessage());
                 toast(what + "失败: " + e.getMessage());
             }
         }, "netease-download");
         t.setDaemon(true);
         t.start();
     }
+
+    /** 带取消能力的下载进度监听 */
+    private static final class DownloadListener
+            implements NeteaseDownloader.Listener, NeteaseDownloader.Cancellable {
+        private final DownloadProgressDialog progress;
+
+        DownloadListener(DownloadProgressDialog progress) {
+            this.progress = progress;
+        }
+
+        @Override
+        public void onStart(int total) {
+            progress.start(total);
+            progress.setPhase("开始下载，共 " + total + " 首");
+        }
+
+        @Override
+        public void onSong(int index, int total, NeteaseClient.Song song) {
+            progress.song(index, song);
+        }
+
+        @Override
+        public void onBytes(long done, long fileTotal) {
+            progress.bytes(done, fileTotal);
+        }
+
+        @Override
+        public void onResult(String status, String message) {
+            progress.result(status, message);
+        }
+
+        @Override
+        public void onFinish(String summary) {
+            progress.finish(summary);
+            toast(summary + "；如未显示请扫描音乐库");
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return progress.isCancelled();
+        }
+    }
+
 
     /** 配置页「打开转换记录」按钮入口 */
     public static void onOpenHistory() {

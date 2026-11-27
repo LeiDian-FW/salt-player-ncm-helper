@@ -203,11 +203,10 @@
         },
         {
           "key": "netease.limit",
-          "type": "seekbar",
-          "title": "每次最多下载（首）",
-          "default_value": 10.0,
-          "min": 1.0,
-          "max": 50.0
+          "type": "edittext",
+          "title": "每次最多下载数",
+          "summary": "只能填写 1-50 的整数（仅数字），例如 10",
+          "default_value": "10"
         }
       ]
     }

@@ -349,25 +349,56 @@ public final class NeteaseClient {
     }
 
     // ---------------- 下载 ----------------
+    /** 下载被用户取消 */
+    public static final class DownloadCancelled extends IOException {
+        public DownloadCancelled() {
+            super("已取消");
+        }
+    }
+
     /** 流式下载歌曲到目标文件，返回字节数 */
     public long download(String url, Path dest) throws IOException {
+        return download(url, dest, null, null);
+    }
+
+    /** 流式下载（带进度与取消）：progress(done, totalBytes)，cancel 返回 true 时中止 */
+    public long download(String url, Path dest,
+                         java.util.function.BiConsumer<Long, Long> progress,
+                         java.util.function.BooleanSupplier cancel) throws IOException {
         Files.createDirectories(dest.getParent());
         Path tmp = dest.resolveSibling(dest.getFileName() + ".part");
         HttpURLConnection conn = open(url, "GET", false);
-        long total = 0;
+        long total = conn.getContentLengthLong();
+        long done = 0;
+        boolean moved = false;
         try (InputStream in = conn.getInputStream();
              OutputStream out = Files.newOutputStream(tmp)) {
             byte[] buf = new byte[1 << 16];
             int n;
+            long lastReport = 0;
             while ((n = in.read(buf)) > 0) {
+                if (cancel != null && cancel.getAsBoolean()) {
+                    throw new DownloadCancelled();
+                }
                 out.write(buf, 0, n);
-                total += n;
+                done += n;
+                if (progress != null && (done - lastReport >= (1 << 16) || (total > 0 && done >= total))) {
+                    lastReport = done;
+                    progress.accept(done, total);
+                }
             }
         } finally {
             conn.disconnect();
+            if (!moved) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                }
+            }
         }
         Files.move(tmp, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        return total;
+        moved = true;
+        return done;
     }
 
     /** 根据下载链接推断扩展名 */
