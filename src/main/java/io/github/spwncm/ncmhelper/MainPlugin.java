@@ -291,6 +291,48 @@ public class MainPlugin extends SpwPlugin {
         }
     }
 
+    /** 配置页「从剪贴板登录」按钮入口：读取剪贴板里的 Cookie 直接登录 */
+    public static void onNeteaseCookieFromClipboard() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.netease == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        if (!p.neteaseEnabled) {
+            toast("请先在配置中启用网易云功能");
+            return;
+        }
+        String text = "";
+        try {
+            java.awt.datatransfer.Clipboard cb = java.awt.Toolkit.getDefaultToolkit()
+                    .getSystemClipboard();
+            Object data = cb.getData(java.awt.datatransfer.DataFlavor.stringFlavor);
+            if (data != null) text = String.valueOf(data).strip();
+        } catch (Throwable e) {
+            toast("读取剪贴板失败: " + e.getMessage());
+            return;
+        }
+        if (text.isEmpty()) {
+            toast("剪贴板为空，请先复制 MUSIC_U 或其值");
+            return;
+        }
+        // 允许直接复制 MUSIC_U 的值、或整串 Cookie、或带引号/换行的内容
+        text = text.replace("\r", "").replace("\n", " ").replace("\"", "").strip();
+        if (!text.contains("MUSIC_U") && !text.contains("=")) {
+            toast("剪贴板内容不像 Cookie，请复制 MUSIC_U=... 或仅复制其值");
+            return;
+        }
+        Log.info("尝试从剪贴板登录网易云");
+        boolean ok = p.netease.loginWithCookie(text);
+        if (ok) {
+            String nick = p.netease.nickname();
+            toast("网易云登录成功" + (nick.isEmpty() ? "" : "：" + nick));
+        } else {
+            toast("Cookie 无效或已过期（也可能网络异常），请重新复制 MUSIC_U");
+            Log.warn("剪贴板 Cookie 登录失败");
+        }
+    }
+
     /** 配置页「登录状态」按钮入口 */
     public static void onNeteaseStatus() {
         MainPlugin p = INSTANCE;

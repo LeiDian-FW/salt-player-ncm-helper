@@ -154,6 +154,13 @@
         },
         {
           "type": "button",
+          "title": "从剪贴板登录",
+          "summary": "复制 MUSIC_U 后点此按钮，自动读取剪贴板并校验登录",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseCookieFromClipboard"
+        },
+        {
+          "type": "button",
           "title": "退出登录",
           "summary": "清除本地保存的登录 Cookie",
           "arrow_type": "none",
