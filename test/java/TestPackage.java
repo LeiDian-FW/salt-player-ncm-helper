@@ -75,7 +75,9 @@ public class TestPackage {
         }
         String cls = a.getValue("Plugin-Class");
         String perm = a.getValue("Plugin-Permissions");
-        if (!"key-bindings".equals(perm)) throw new AssertionError("权限声明异常: " + perm);
+        java.util.Set<String> perms = new java.util.HashSet<>(java.util.Arrays.asList(perm.split(",")));
+        if (!perms.contains("key-bindings")) throw new AssertionError("缺少快捷键权限: " + perm);
+        if (!perms.contains("class-transform")) throw new AssertionError("缺少 Hook 权限: " + perm);
 
         // 3) 类加载
         java.util.List<URL> urls = new java.util.ArrayList<>();
