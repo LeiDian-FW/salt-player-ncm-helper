@@ -37,6 +37,7 @@ import com.xuncorp.spw.workshop.api.WorkshopApi
 import com.xuncorp.spw.workshop.api.hook.ComposableHook
 import com.xuncorp.spw.workshop.api.hook.HookHandle
 import com.xuncorp.spw.workshop.api.hook.UiHookCall
+import io.github.spwncm.ncmhelper.Log
 import io.github.spwncm.ncmhelper.NeteaseClient
 import io.github.spwncm.ncmhelper.NeteaseUiBridge
 import io.github.spwncm.ncmhelper.QrCode
@@ -61,6 +62,7 @@ private val CHIP = Color(0xFF232F40)
 object NeteaseNativeUi {
 
     private var hookHandle: HookHandle? = null
+    private val hookHits = java.util.concurrent.atomic.AtomicInteger(0)
 
     internal var visible by mutableStateOf(false)
     internal var status by mutableStateOf("")
@@ -83,6 +85,10 @@ object NeteaseNativeUi {
     @JvmStatic
     fun isInstalled(): Boolean = hookHandle != null
 
+    /** Hook 实际被调用的次数（用于判断注入点是否真的生效） */
+    @JvmStatic
+    fun hookHits(): Int = hookHits.get()
+
     @JvmStatic
     fun isVisible(): Boolean = visible
 
@@ -92,26 +98,50 @@ object NeteaseNativeUi {
         if (value) refreshStatus()
     }
 
+    /** 候选注入点：标题栏（参考实现同版本验证过）→ 导航内容根 → 侧栏项 */
+    private data class HookTarget(
+        val owner: String,
+        val name: String,
+        val caller: String,
+        val params: List<String>
+    )
+
+    private val hookTargets = listOf(
+        HookTarget(
+            "androidx.compose.ui.\u0b61", "\u037f", "androidx.compose.ui.\u0537",
+            listOf(
+                "androidx.compose.ui.\u04d7", "androidx.compose.ui.\u0aa0",
+                "androidx.compose.ui.\u091a", "androidx.compose.ui.Modifier"
+            )
+        ),
+        HookTarget(
+            "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", "Content",
+            "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", emptyList()
+        ),
+        HookTarget(
+            "androidx.compose.ui.\u0b1a", "\u037f", "androidx.compose.ui.\u0b1a$\u052e",
+            listOf("androidx.compose.ui.\u063a$\u052a")
+        )
+    )
+
     @JvmStatic
     fun install(): Boolean {
         if (hookHandle != null) return true
-        return try {
-            hookHandle = WorkshopApi.hookRegistrar.afterComposable(
-                "com.xuncorp.voxzen.ui.navigation.AppNavigationKt",
-                "Content",
-                "com.xuncorp.voxzen.ui.navigation.AppNavigationKt",
-                emptyList<String>(),
-                50,
-                PanelHook()
-            )
-            refreshStatus()
-            println("[NCM Helper] 原生界面已安装")
-            true
-        } catch (t: Throwable) {
-            println("[NCM Helper] 原生界面 Hook 安装失败: $t")
-            hookHandle = null
-            false
+        for ((index, target) in hookTargets.withIndex()) {
+            try {
+                hookHandle = WorkshopApi.hookRegistrar.afterComposable(
+                    target.owner, target.name, target.caller, target.params, 50, PanelHook()
+                )
+                hookHits.set(0)
+                Log.info("原生界面已安装（候选 ${index + 1}：${target.owner}#${target.name}）")
+                refreshStatus()
+                return true
+            } catch (t: Throwable) {
+                Log.warn("原生界面候选 ${index + 1} 注入失败（${target.owner}#${target.name}）: $t")
+            }
         }
+        Log.warn("原生界面所有候选注入点均失败，将回退 Swing 面板")
+        return false
     }
 
     @JvmStatic
@@ -122,6 +152,10 @@ object NeteaseNativeUi {
         }
         hookHandle = null
         visible = false
+    }
+
+    internal fun onHookHit() {
+        hookHits.incrementAndGet()
     }
 
     internal fun refreshStatus() {
@@ -224,6 +258,7 @@ object NeteaseNativeUi {
 private class PanelHook : ComposableHook() {
     @Composable
     override fun Content(call: UiHookCall) {
+        NeteaseNativeUi.onHookHit()
         Box(Modifier.size(0.dp))
         if (NeteaseNativeUi.visible) NeteasePanel()
     }

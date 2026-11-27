@@ -608,6 +608,13 @@ public class MainPlugin extends SpwPlugin {
             NeteaseSwingPanel.show();
             return;
         }
+        int hits = NeteaseUiBridge.hookHits();
+        if (hits <= 0) {
+            Log.warn("原生 Hook 已注册但尚未被宿主调用（注入点可能不匹配），回退到 Swing 面板");
+            toast("原生界面注入点未生效，已回退到兼容面板");
+            NeteaseSwingPanel.show();
+            return;
+        }
         NeteaseUiBridge.openPanel();
     }
 

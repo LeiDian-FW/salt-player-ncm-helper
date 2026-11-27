@@ -36,6 +36,12 @@ public final class NeteaseUiBridge {
         invokeStatic("setVisible", new Class<?>[]{boolean.class}, false);
     }
 
+    /** 原生 Hook 实际被调用次数 */
+    public static int hookHits() {
+        Object v = invokeStatic("hookHits", new Class<?>[0]);
+        return v instanceof Integer i ? i : 0;
+    }
+
     /** 面板显隐状态 */
     public static boolean panelVisible() {
         Object v = invokeStatic("isVisible", new Class<?>[0]);
