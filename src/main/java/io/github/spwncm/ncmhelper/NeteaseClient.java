@@ -123,12 +123,23 @@ public final class NeteaseClient {
     /** 轮询扫码状态：801 等待扫码 / 802 待确认 / 803 成功 / 800 过期 */
     public QrStatus pollQr(String key) throws IOException {
         QrStatus st = new QrStatus();
-        String url = "https://music.163.com/api/login/qrcode/client/login?key="
-                + enc(key) + "&type=1";
-        Resp r = get(url, false);
+        String pollUrl = "https://music.163.com/api/login/qrcode/client/login";
+        String form = "key=" + enc(key) + "&type=1";
+        // 官方实现的轮询是 POST；GET 在部分版本只返回状态、不下发登录 Cookie
+        String path = pollUrl + "?" + form;
+        Resp r = null;
+        try {
+            r = post("https://music.163.com/api/login/qrcode/client/login?key=" + enc(key) + "&type=1", "");
+        } catch (Exception e) {
+            Log.warn("POST 轮询失败，回退 GET: " + e.getMessage());
+        }
+        if (r == null || r.body == null || r.body.isBlank()) {
+            r = get(path, false);
+        }
         Map<String, Object> d = Json.asMap(Json.parse(r.body));
         st.code = (int) Json.lng(d, "code", 0);
         st.message = Json.str(d, "message", "");
+        Log.info("扫码状态: " + st.code + (st.message.isEmpty() ? "" : " (" + st.message + ")"));
         if (st.code == 803) {
             // cookie 可能在多次 Set-Cookie 里，也可能在响应体 cookie 字段
             absorbCookies(r.setCookies);
@@ -136,12 +147,13 @@ public final class NeteaseClient {
             if (!isLoggedIn()) {
                 // 个别版本第二次轮询才下发 cookie
                 sleepMs(800);
-                absorbCookies(get(url, false).setCookies);
+                absorbCookies(get(path, false).setCookies);
             }
             syncFromStore();
             if (isLoggedIn()) {
                 saveCookie();
                 st.success = true;
+                Log.info("登录成功，已保存 Cookie: " + cookies.keySet());
                 refreshProfile();
             } else {
                 Log.warn("扫码已确认，但未拿到登录 Cookie（响应头数=" + r.setCookies.size()
