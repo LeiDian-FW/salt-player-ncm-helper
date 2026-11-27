@@ -30,6 +30,9 @@ import javax.swing.SwingUtilities;
  */
 public final class NeteaseLoginDialog {
 
+    /** 同一时间只允许一个登录窗口/轮询线程，避免并发请求触发风控 */
+    private static volatile JDialog current;
+
     private static final int QR_SIZE = 300;
     private static final Color BG_TOP = new Color(0x15, 0x1C, 0x27);
     private static final Color BG_BOTTOM = new Color(0x1E, 0x2A, 0x3A);
@@ -44,6 +47,10 @@ public final class NeteaseLoginDialog {
     }
 
     public static void show(NeteaseClient client) {
+        JDialog old = current;
+        if (old != null) {
+            SwingUtilities.invokeLater(old::dispose);
+        }
         Thread prepare = new Thread(() -> {
             try {
                 Log.info("正在申请网易云登录二维码…");
@@ -144,6 +151,18 @@ public final class NeteaseLoginDialog {
         card.add(Box.createVerticalStrut(16));
         card.add(buttons);
 
+        current = dialog;
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                if (current == dialog) current = null;
+            }
+
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                if (current == dialog) current = null;
+            }
+        });
         dialog.setContentPane(card);
         dialog.pack();
         dialog.setLocationRelativeTo(owner);
@@ -158,6 +177,8 @@ public final class NeteaseLoginDialog {
         Thread poller = new Thread(() -> {
             long deadline = System.currentTimeMillis() + 180_000;
             boolean confirmed = false;
+            int lastCode = Integer.MIN_VALUE;
+            int rateLimitHits = 0;
             try {
                 while (dialog.isDisplayable() && System.currentTimeMillis() < deadline) {
                     NeteaseClient.QrStatus st = client.pollQr(key);
@@ -180,8 +201,30 @@ public final class NeteaseLoginDialog {
                         dot.setColor(ACCENT);
                         status.setText("已扫码，请在手机上确认登录");
                     }
+                    if (st.code == 406 || st.code == 8821) {
+                        rateLimitHits++;
+                        dot.setColor(WARN);
+                        status.setText("请求过于频繁，正在等待重试…");
+                        if (rateLimitHits == 1) {
+                            Log.warn("扫码轮询被限流（" + st.code + "），降低频率等待恢复");
+                        }
+                        if (rateLimitHits > 10) {
+                            dot.setColor(new Color(0xE5, 0x5A, 0x5A));
+                            status.setText("请求过于频繁，请关闭窗口等待 1-2 分钟后重试");
+                            Log.warn("扫码轮询持续被限流，停止本次登录");
+                            return;
+                        }
+                        Thread.sleep(8000);      // 限流后退避
+                        continue;
+                    }
+                    if (st.code != lastCode) {
+                        lastCode = st.code;
+                        Log.info("扫码状态: " + st.code + (st.message.isEmpty() ? "" : " (" + st.message + ")"));
+                    }
+                    Thread.sleep(2000);          // 正常轮询间隔
                 }
                 if (System.currentTimeMillis() >= deadline) {
+                    Log.warn("扫码登录超时（180 秒）");
                     dot.setColor(WARN);
                     status.setText("登录超时，请点击「刷新二维码」重试");
                 }

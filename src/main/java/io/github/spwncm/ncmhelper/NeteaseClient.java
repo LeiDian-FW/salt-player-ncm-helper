@@ -129,7 +129,7 @@ public final class NeteaseClient {
         String path = pollUrl + "?" + form;
         Resp r = null;
         try {
-            r = post("https://music.163.com/api/login/qrcode/client/login?key=" + enc(key) + "&type=1", "");
+            r = post("https://music.163.com/api/login/qrcode/client/login", "key=" + enc(key) + "&type=1");
         } catch (Exception e) {
             Log.warn("POST 轮询失败，回退 GET: " + e.getMessage());
         }
@@ -139,7 +139,6 @@ public final class NeteaseClient {
         Map<String, Object> d = Json.asMap(Json.parse(r.body));
         st.code = (int) Json.lng(d, "code", 0);
         st.message = Json.str(d, "message", "");
-        Log.info("扫码状态: " + st.code + (st.message.isEmpty() ? "" : " (" + st.message + ")"));
         if (st.code == 803) {
             // cookie 可能在多次 Set-Cookie 里，也可能在响应体 cookie 字段
             absorbCookies(r.setCookies);
@@ -310,6 +309,7 @@ public final class NeteaseClient {
     private Resp post(String url, String body) throws IOException {
         HttpURLConnection conn = open(url, "POST", true);
         conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
         try (OutputStream os = conn.getOutputStream()) {
             os.write(body.getBytes(StandardCharsets.UTF_8));
         }
