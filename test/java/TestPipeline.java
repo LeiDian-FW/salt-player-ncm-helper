@@ -29,7 +29,8 @@ public class TestPipeline {
         // 同名歌词跟随
         Files.writeString(src.resolve("album/测试歌手 - 测试歌曲.lrc"), "[ti:测试歌曲]\n[00:01.00]源目录歌词\n");
 
-        NcmJob job = new NcmJob(data, new NeteaseLyrics(data.resolve("cache")));
+        NcmJob job = new NcmJob(data, new NeteaseLyrics(data.resolve("cache")),
+                new io.github.spwncm.ncmhelper.History(data, 30));
         job.apply(NcmJob.JobConfig.of(lib, false, List.of(src), 60, true, false));
         job.runOnce(true);
 

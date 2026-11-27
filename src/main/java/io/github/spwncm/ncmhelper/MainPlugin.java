@@ -8,6 +8,7 @@ import com.xuncorp.spw.workshop.api.WorkshopApi;
 import com.xuncorp.spw.workshop.api.config.ConfigHelper;
 import com.xuncorp.spw.workshop.api.config.ConfigManager;
 import java.awt.event.KeyEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ public class MainPlugin extends SpwPlugin {
     private NeteaseLyrics lyricsService;
     private AutoCloseable hotkey;
     private Path dataDir;
+    private History history;
 
     private volatile boolean lyricsOnline = true;
     private volatile boolean writeLrc = true;
@@ -52,7 +54,8 @@ public class MainPlugin extends SpwPlugin {
                     + " | 渠道 " + getPluginContext().getSpwChannel());
 
             lyricsService = new NeteaseLyrics(dataDir.resolve("lyrics-cache"));
-            job = new NcmJob(dataDir, lyricsService);
+            history = new History(dataDir, 30);
+            job = new NcmJob(dataDir, lyricsService, history);
             reloadSettings();
 
             configManager.addConfigChangeListener(h -> {
@@ -119,6 +122,7 @@ public class MainPlugin extends SpwPlugin {
         boolean fetchLyrics = cfgBool("ncm.lyrics", true);
         lyricsOnline = cfgBool("lyrics.online", true);
         writeLrc = cfgBool("lyrics.write_lrc", true);
+        if (history != null) history.setRetainDays(cfgInt("history.days", 30));
 
         List<Path> sources = new ArrayList<>();
         for (String part : src.split(";")) {
@@ -226,6 +230,36 @@ public class MainPlugin extends SpwPlugin {
         }
         p.job.triggerOnce(true);
         toast("已开始扫描并处理 NCM…");
+    }
+
+    /** 配置页「打开转换记录」按钮入口 */
+    public static void onOpenHistory() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.dataDir == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        try {
+            Path f = p.dataDir.resolve("history.jsonl");
+            if (!Files.isRegularFile(f)) {
+                toast("暂无转换记录");
+                return;
+            }
+            java.awt.Desktop.getDesktop().open(f.toFile());
+        } catch (Throwable e) {
+            toast("打开失败: " + e.getMessage());
+        }
+    }
+
+    /** 配置页「清空转换记录」按钮入口 */
+    public static void onClearHistory() {
+        MainPlugin p = INSTANCE;
+        if (p == null || p.history == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        p.history.clear();
+        toast("转换记录已清空");
     }
 
     /** 配置页「查看状态」按钮入口 */

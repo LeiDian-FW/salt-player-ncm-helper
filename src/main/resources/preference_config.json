@@ -83,6 +83,35 @@
           "default_value": true
         }
       ]
+    },
+    {
+      "title": "转换记录",
+      "config": "config.json",
+      "preferences": [
+        {
+          "key": "history.days",
+          "type": "seekbar",
+          "title": "保留天数",
+          "summary": "超过该天数的转换记录会自动删除",
+          "default_value": 30.0,
+          "min": 1.0,
+          "max": 3650.0
+        },
+        {
+          "type": "button",
+          "title": "打开转换记录",
+          "summary": "用默认程序打开 history.jsonl",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onOpenHistory"
+        },
+        {
+          "type": "button",
+          "title": "清空转换记录",
+          "summary": "删除全部历史记录",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onClearHistory"
+        }
+      ]
     }
   ]
 }

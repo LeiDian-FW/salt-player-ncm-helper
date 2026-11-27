@@ -58,6 +58,7 @@ public final class NcmJob {
     }
 
     private final NeteaseLyrics lyrics;
+    private final History history;
     private final Path dataDir;
     private final Path stateFile;
     private final Set<String> processed = ConcurrentHashMap.newKeySet();
@@ -70,11 +71,29 @@ public final class NcmJob {
     private volatile List<Path> cachedSources = new ArrayList<>();
     private volatile long cachedAt = 0L;
 
-    public NcmJob(Path dataDir, NeteaseLyrics lyrics) {
+    public NcmJob(Path dataDir, NeteaseLyrics lyrics, History history) {
         this.dataDir = dataDir;
         this.lyrics = lyrics;
+        this.history = history;
         this.stateFile = dataDir.resolve("processed.txt");
         loadState();
+    }
+
+    private void record(String status, String title, String artist, Path dest, String message) {
+        if (history == null) return;
+        long size = 0L;
+        String fmt = "";
+        if (dest != null) {
+            try {
+                size = Files.size(dest);
+            } catch (IOException ignored) {
+            }
+            String name = dest.getFileName().toString();
+            int dot = name.lastIndexOf('.');
+            fmt = dot > 0 ? name.substring(dot + 1) : "";
+        }
+        history.add(new History.Record(System.currentTimeMillis(), status, title, artist,
+                dest == null ? "" : dest.toString(), fmt, size, message));
     }
 
     /** 应用新配置：必要时重启监视线程 */
@@ -171,13 +190,16 @@ public final class NcmJob {
                     NewFile dest = processNcm(f, library);
                     if (dest == null) {
                         skipped++;
+                        record("跳过", f.getFileName().toString(), "", null, "音乐库已存在相同音频");
                     } else {
                         ncm++;
                         newFiles.add(dest);
+                        record("成功", dest.title(), dest.artist(), dest.path(), "");
                         Log.info("转换完成: " + f.getFileName() + " -> " + library.relativize(dest.path()));
                     }
                 } catch (Throwable e) {
                     failed++;
+                    record("失败", f.getFileName().toString(), "", null, String.valueOf(e));
                     Log.error("转换失败（源文件已保留）: " + f.getFileName() + " -> " + e);
                 }
             }
@@ -188,12 +210,15 @@ public final class NcmJob {
                         if (dest != null) {
                             moved++;
                             newFiles.add(dest);
+                            record("成功", f.getFileName().toString(), "", dest.path(), "归档已有音频");
                             Log.info("归档: " + f.getFileName() + " -> " + library.relativize(dest.path()));
                         } else {
                             skipped++;
+                            record("跳过", f.getFileName().toString(), "", null, "音乐库已存在相同文件");
                         }
                     } catch (Throwable e) {
                         failed++;
+                        record("失败", f.getFileName().toString(), "", null, String.valueOf(e));
                         Log.error("归档失败: " + f.getFileName() + " -> " + e);
                     }
                 }

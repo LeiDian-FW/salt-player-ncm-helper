@@ -115,6 +115,8 @@ def main():
     else:
         run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestLyrics"])
     run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestPipeline", WORK, ncm])
+    run([java] + HOST_JVM + ["-cp", cp + os.pathsep + TEST_OUT, "TestHistory",
+         os.path.join(TEST_DIR, "history")])
     spmod = find_spmod()
     if not spmod:
         raise SystemExit("未找到构建产物 .spmod")

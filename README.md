@@ -19,6 +19,7 @@
 | 自动归档 | 按 `歌手/专辑/歌手 - 歌名.ext` 写入音乐库，自动清洗非法字符 |
 | 内嵌封面 | 写入 FLAC `PICTURE` 元数据块；音频帧逐字节校验，已有封面不覆盖 |
 | 在线补歌词 | 播放器找不到歌词时，按歌名/歌手匹配网易云歌词（含翻译），可落盘 `.lrc` |
+| **转换记录** | 保存最近的成功/跳过/失败记录，按保留天数**自动过期清理**（默认 30 天） |
 | 后台监视 | 定期扫描下载目录；可配置间隔 |
 | 快捷键 | `Ctrl+Alt+N` 立即处理一次（需授权快捷键权限） |
 
@@ -54,6 +55,8 @@
 | | 转换后自动补歌词 | 开 |
 | 歌词 | 在线补全歌词 | 开 |
 | | 把歌词保存为 `.lrc` | 开 |
+| 转换记录 | 保留天数（超期自动删除） | 30 天 |
+| | 打开转换记录 / 清空转换记录 | — |
 
 配置页还有 **立即处理一次** 与 **查看监视状态** 按钮。
 
@@ -65,7 +68,7 @@
 %APPDATA%\Salt Player for Windows\workshop\data\io.github.spwncm.ncmhelper\ncm-helper.log
 ```
 
-正常启动首行为 `启动 v1.0.3 | SPW 1.19.3 | 渠道 Steam`；每轮扫描会输出汇总。
+正常启动首行为 `启动 v1.1.0 | SPW 1.19.3 | 渠道 Steam`；每轮扫描会输出汇总。
 若下载后 1 分钟仍未处理，先确认：插件已启用、下载目录与音乐库路径正确、日志中无报错。
 
 ## 已验证
@@ -76,6 +79,7 @@
 - 向下载目录投放 NCM：60 秒内自动识别 → 转换 → 归档 → 内嵌封面 → 补歌词 → 删除源文件
 - 转换速度 **< 1 秒 / 10MB**；连续运行 6 小时无内存问题
 - `python run_tests.py --no-network` 在 `-Xmx512M` + `--limit-modules=java.base,java.desktop`（模拟宿主）下全部通过
+- 转换记录的自测覆盖：保存 / 重新加载 / 超期自动清理 / 清空
 
 ## 实现要点（写给其他 Mod 开发者）
 
@@ -95,7 +99,7 @@ Salt Player 的 jlink 运行时**没有 `java.net.http` 模块**，JVM 堆为 **
 
 ```bash
 python get_deps.py     # 下载编译期依赖到 libs/（带 SHA-256 校验）
-python build.py        # 产物 build/libs/plugin-io.github.spwncm.ncmhelper-1.0.3.spmod
+python build.py        # 产物 build/libs/plugin-io.github.spwncm.ncmhelper-1.1.0.spmod
 python run_tests.py    # 自测：核心解密 / 歌词接口 / 完整流水线 / 打包校验
 ```
 
