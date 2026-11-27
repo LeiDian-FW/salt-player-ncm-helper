@@ -144,6 +144,76 @@ object NeteaseNativeUi {
         return false
     }
 
+    /** 离屏渲染指定场景（自测/截图用） */
+    @JvmStatic
+    fun renderScenario(scenario: String, path: String): Boolean {
+        when (scenario) {
+            "search" -> {
+                tab = 1
+                keyword = "unravel"
+                listTitle = "搜索「unravel」：30 首"
+                songs = listOf(
+                    songOf("unravel", "TK from 凛として時雨"),
+                    songOf("unravel (acoustic version)", "TK from 凛として時雨"),
+                    songOf("unravel (TV Edit)", "TK from 凛として時雨")
+                )
+                dlActive = true
+                dlFraction = 0.42f
+                dlText = "(2/10) unravel - TK from 凛として時雨"
+                dlStats = "成功 1 · 跳过 0 · 失败 0"
+                message = ""
+            }
+            "scan" -> {
+                tab = 0
+                qrRows = runCatching { QrCode.matrix(LOGIN_PREFIX + "TEST-KEY", 300) }.getOrNull()
+                message = "请用网易云 App 扫码"
+                status = "未登录"
+            }
+            "playlist" -> {
+                tab = 2
+                playlistId = "3778678"
+                listTitle = "歌单：200 首"
+                songs = listOf(
+                    songOf("海屿你", "马也_Crabbit"),
+                    songOf("夜に駆ける", "YOASOBI"),
+                    songOf("群青", "YOASOBI")
+                )
+                message = ""
+            }
+            else -> {
+                tab = 0
+                status = "未登录"
+            }
+        }
+        return renderPanelForTest(path, 720, 860)
+    }
+
+    private fun songOf(name: String, artist: String): NeteaseClient.Song {
+        val s = NeteaseClient.Song()
+        s.name = name
+        s.artists.add(artist)
+        return s
+    }
+
+    /** 离屏渲染自测：把原生面板渲染成 PNG，用于无主机环境验证 UI 可组合 */
+    @JvmStatic
+    fun renderPanelForTest(path: String, width: Int, height: Int): Boolean {
+        return try {
+            val scene = androidx.compose.ui.ImageComposeScene(width, height) {
+                NeteasePanelContent()
+            }
+            val image = scene.render()
+            val bytes = image.encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG)?.bytes
+            scene.close()
+            if (bytes == null || bytes.isEmpty()) return false
+            java.io.File(path).writeBytes(bytes)
+            true
+        } catch (t: Throwable) {
+            Log.error("原生面板离屏渲染失败: $t")
+            false
+        }
+    }
+
     @JvmStatic
     fun uninstall() {
         try {
@@ -267,7 +337,13 @@ private class PanelHook : ComposableHook() {
 @Composable
 private fun NeteasePanel() {
     Dialog(onDismissRequest = { NeteaseNativeUi.visible = false }) {
-        Box(
+        NeteasePanelContent()
+    }
+}
+
+@Composable
+internal fun NeteasePanelContent() {
+    Box(
             Modifier
                 .width(620.dp)
                 .background(BG, RoundedCornerShape(16.dp))
@@ -328,7 +404,6 @@ private fun NeteasePanel() {
                     SongList()
                 }
             }
-        }
     }
 
     // 扫码登录副作用
