@@ -610,12 +610,35 @@ public class MainPlugin extends SpwPlugin {
         }
         int hits = NeteaseUiBridge.hookHits();
         if (hits <= 0) {
-            Log.warn("原生 Hook 已注册但尚未被宿主调用（注入点可能不匹配），回退到 Swing 面板");
-            toast("原生界面注入点未生效，已回退到兼容面板");
-            NeteaseSwingPanel.show();
+            String before = NeteaseUiBridge.currentTarget();
+            boolean switched = NeteaseUiBridge.retryNextCandidate();
+            Log.warn("原生 Hook 未触发（" + before + "），已切换到下一个候选: "
+                    + NeteaseUiBridge.currentTarget() + "，安装=" + switched);
+            if (switched) {
+                toast("上一个注入点未生效，已切换注入点，请再点一次「打开网易云原生面板」");
+            } else {
+                toast("原生界面不可用，已打开兼容面板");
+                NeteaseSwingPanel.show();
+            }
             return;
         }
         NeteaseUiBridge.openPanel();
+    }
+
+    /** 配置页「原生界面状态」按钮入口 */
+    public static void onNeteaseNativeStatus() {
+        MainPlugin p = INSTANCE;
+        if (p == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        p.tryInstallNativeUi();
+        boolean installed = NeteaseUiBridge.nativeAvailable();
+        int hits = NeteaseUiBridge.hookHits();
+        String target = NeteaseUiBridge.currentTarget();
+        Log.info("原生界面状态: installed=" + installed + ", hits=" + hits + ", target=" + target);
+        toast("原生界面: " + (installed ? "已安装" : "未安装")
+                + " | Hook调用=" + hits + " | " + target);
     }
 
     /** 配置页「打开转换记录」按钮入口 */

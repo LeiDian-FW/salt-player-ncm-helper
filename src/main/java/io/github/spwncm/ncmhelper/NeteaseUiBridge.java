@@ -36,6 +36,17 @@ public final class NeteaseUiBridge {
         invokeStatic("setVisible", new Class<?>[]{boolean.class}, false);
     }
 
+    /** 注入点未生效时切换下一个候选，返回是否安装成功 */
+    public static boolean retryNextCandidate() {
+        return Boolean.TRUE.equals(invokeStatic("retryNextCandidate", new Class<?>[0]));
+    }
+
+    /** 当前注入点描述 */
+    public static String currentTarget() {
+        Object v = invokeStatic("currentTarget", new Class<?>[0]);
+        return v == null ? "未安装" : String.valueOf(v);
+    }
+
     /** 原生 Hook 实际被调用次数 */
     public static int hookHits() {
         Object v = invokeStatic("hookHits", new Class<?>[0]);

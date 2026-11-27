@@ -63,6 +63,7 @@ object NeteaseNativeUi {
 
     private var hookHandle: HookHandle? = null
     private val hookHits = java.util.concurrent.atomic.AtomicInteger(0)
+    private var candidateIndex = 0
 
     internal var visible by mutableStateOf(false)
     internal var status by mutableStateOf("")
@@ -127,13 +128,16 @@ object NeteaseNativeUi {
     @JvmStatic
     fun install(): Boolean {
         if (hookHandle != null) return true
-        for ((index, target) in hookTargets.withIndex()) {
+        val order = (0 until hookTargets.size).map { (candidateIndex + it) % hookTargets.size }
+        for (index in order) {
+            val target = hookTargets[index]
             try {
                 hookHandle = WorkshopApi.hookRegistrar.afterComposable(
                     target.owner, target.name, target.caller, target.params, 50, PanelHook()
                 )
                 hookHits.set(0)
-                Log.info("原生界面已安装（候选 ${index + 1}：${target.owner}#${target.name}）")
+                candidateIndex = index
+                Log.info("原生界面已安装（候选 ${index + 1}/${hookTargets.size}：${target.owner}#${target.name}）")
                 refreshStatus()
                 return true
             } catch (t: Throwable) {
@@ -212,6 +216,26 @@ object NeteaseNativeUi {
             Log.error("原生面板离屏渲染失败: $t")
             false
         }
+    }
+
+    /** 当前注入点未生效时，卸载并切换到下一个候选注入点 */
+    @JvmStatic
+    fun retryNextCandidate(): Boolean {
+        try {
+            hookHandle?.unhook()
+        } catch (_: Throwable) {
+        }
+        hookHandle = null
+        candidateIndex = (candidateIndex + 1) % hookTargets.size
+        Log.info("原生界面：切换到候选注入点 ${candidateIndex + 1}/${hookTargets.size}")
+        return install()
+    }
+
+    /** 当前生效的注入点描述（诊断用） */
+    @JvmStatic
+    fun currentTarget(): String {
+        val t = hookTargets.getOrNull(candidateIndex) ?: return "未安装"
+        return "候选${candidateIndex + 1}/${hookTargets.size}: ${t.owner}#${t.name}"
     }
 
     @JvmStatic

@@ -125,6 +125,13 @@
           "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onOpenNeteasePanel"
         },
         {
+          "type": "button",
+          "title": "原生界面状态",
+          "summary": "检查原生界面是否已安装、Hook 是否被宿主调用（诊断用）",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onNeteaseNativeStatus"
+        },
+        {
           "key": "netease.enabled",
           "type": "switch",
           "title": "启用网易云功能",
