@@ -35,7 +35,7 @@ LIBS_OUT = os.path.join(BUILD, "libs")
 
 PLUGIN_ID = "io.github.spwncm.ncmhelper"
 PLUGIN_CLASS = "io.github.spwncm.ncmhelper.MainPlugin"
-PLUGIN_VERSION = "1.3.1"
+PLUGIN_VERSION = "1.3.2"
 PLUGIN_NAME = "NCM 助手"
 PLUGIN_DESC = "自动解密网易云 NCM、按歌手/专辑归档、内嵌封面并在线补全歌词"
 PLUGIN_PROVIDER = "spwncm"

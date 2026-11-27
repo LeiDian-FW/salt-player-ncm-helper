@@ -506,6 +506,25 @@ public class MainPlugin extends SpwPlugin {
     }
 
 
+    /** 安装前预检宿主 Hook 目标是否存在，便于诊断 */
+    private void preflightNativeHook() {
+        try {
+            ClassLoader host = com.xuncorp.spw.workshop.api.WorkshopApi.class.getClassLoader();
+            Class<?> nav = Class.forName("com.xuncorp.voxzen.ui.navigation.AppNavigationKt", false, host);
+            boolean found = false;
+            for (java.lang.reflect.Method m : nav.getDeclaredMethods()) {
+                if (m.getName().equals("Content")) {
+                    found = true;
+                    break;
+                }
+            }
+            Log.info("原生界面预检: AppNavigationKt.Content 存在=" + found
+                    + "，方法数=" + nav.getDeclaredMethods().length);
+        } catch (Throwable e) {
+            Log.warn("原生界面预检失败: " + e);
+        }
+    }
+
     /** 尝试安装原生 Compose 界面（需要 CLASS_TRANSFORM 权限） */
     private void tryInstallNativeUi() {
         try {
@@ -514,6 +533,7 @@ public class MainPlugin extends SpwPlugin {
                 return;
             }
             if (NeteaseUiBridge.nativeAvailable()) return;
+            preflightNativeHook();
             Class<?> c = Class.forName("io.github.spwncm.ncmhelper.ui.NeteaseNativeUi",
                     true, getClass().getClassLoader());
             Object ok = c.getMethod("install").invoke(null);
@@ -525,6 +545,10 @@ public class MainPlugin extends SpwPlugin {
 
     public static MainPlugin instance() {
         return INSTANCE;
+    }
+
+    public NeteaseClient client() {
+        return netease;
     }
 
     public History historyRef() {
@@ -580,7 +604,8 @@ public class MainPlugin extends SpwPlugin {
         } catch (Throwable ignored) {
         }
         if (!NeteaseUiBridge.nativeAvailable()) {
-            toast("原生界面未启用：请在模组管理中授予 CLASS_TRANSFORM 权限后重新启用模组");
+            Log.info("原生界面不可用，回退到 Swing 面板（提示：授予 CLASS_TRANSFORM 后可启用原生界面）");
+            NeteaseSwingPanel.show();
             return;
         }
         NeteaseUiBridge.openPanel();
