@@ -118,6 +118,13 @@
       "config": "config.json",
       "preferences": [
         {
+          "type": "button",
+          "title": "打开网易云原生面板",
+          "summary": "原生 Compose 界面：登录状态、扫码登录、在线搜索与下载（需 CLASS_TRANSFORM 权限）",
+          "arrow_type": "none",
+          "on_click": "io.github.spwncm.ncmhelper.MainPlugin.onOpenNeteasePanel"
+        },
+        {
           "key": "netease.enabled",
           "type": "switch",
           "title": "启用网易云功能",

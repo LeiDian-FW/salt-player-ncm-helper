@@ -40,6 +40,24 @@ public final class QrCode {
         }
     }
 
+    /** 返回二维码模块矩阵（true=黑），供原生 Compose 界面绘制 */
+    public static boolean[][] matrix(String text, int size) throws java.io.IOException {
+        try {
+            Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+            hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+            hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+            hints.put(EncodeHintType.MARGIN, 2);
+            BitMatrix m = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints);
+            boolean[][] out = new boolean[m.getHeight()][m.getWidth()];
+            for (int y = 0; y < m.getHeight(); y++)
+                for (int x = 0; x < m.getWidth(); x++)
+                    out[y][x] = m.get(x, y);
+            return out;
+        } catch (Exception e) {
+            throw new java.io.IOException("生成二维码失败: " + e, e);
+        }
+    }
+
     /** 生成并保存二维码 PNG */
     public static void writePng(String text, Path out, int size) throws java.io.IOException {
         BufferedImage img = toImage(text, size);

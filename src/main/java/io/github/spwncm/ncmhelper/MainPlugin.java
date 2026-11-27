@@ -64,14 +64,17 @@ public class MainPlugin extends SpwPlugin {
             lyricsService = new NeteaseLyrics(dataDir.resolve("lyrics-cache"));
             history = new History(dataDir, 30);
             netease = new NeteaseClient(dataDir);
+            NeteaseUiBridge.bind(netease);
             job = new NcmJob(dataDir, lyricsService, history);
             reloadSettings();
 
             configManager.addConfigChangeListener(h -> {
                 Log.info("配置已更新，重新应用");
                 reloadSettings();
+                tryInstallNativeUi();
             });
             registerHotkey();
+            tryInstallNativeUi();
             toast("NCM 助手已启用");
         } catch (Throwable e) {
             Log.error("启动失败: " + e);
@@ -86,6 +89,7 @@ public class MainPlugin extends SpwPlugin {
                 hotkey.close();
                 hotkey = null;
             }
+            NeteaseUiBridge.uninstall();
             Log.info("已停用");
             toast("NCM 助手已停用");
         } catch (Throwable e) {
@@ -501,6 +505,82 @@ public class MainPlugin extends SpwPlugin {
         }
     }
 
+
+    /** 尝试安装原生 Compose 界面（需要 CLASS_TRANSFORM 权限） */
+    private void tryInstallNativeUi() {
+        try {
+            if (!com.xuncorp.spw.workshop.api.WorkshopApi.manager()
+                    .isPermissionGranted(com.xuncorp.spw.workshop.api.PluginPermission.CLASS_TRANSFORM)) {
+                return;
+            }
+            if (NeteaseUiBridge.nativeAvailable()) return;
+            Class<?> c = Class.forName("io.github.spwncm.ncmhelper.ui.NeteaseNativeUi",
+                    true, getClass().getClassLoader());
+            Object ok = c.getMethod("install").invoke(null);
+            Log.info("原生界面安装: " + ok);
+        } catch (Throwable e) {
+            Log.warn("原生界面安装失败: " + e);
+        }
+    }
+
+    public static MainPlugin instance() {
+        return INSTANCE;
+    }
+
+    public String neteaseLibraryPath() {
+        return neteaseLibrary;
+    }
+
+    public int neteaseDownloadLimit() {
+        return neteaseLimit;
+    }
+
+    public boolean neteaseDownloadLimitValid() {
+        return neteaseLimitValid;
+    }
+
+    public boolean neteaseEnabledNow() {
+        return neteaseEnabled;
+    }
+
+    public void startPlaylistDownload(long id) {
+        downloadAsync("下载歌单", () -> netease.playlist(id));
+    }
+
+    public void startSearchDownload(String keyword) {
+        String kw = keyword == null ? "" : keyword.strip();
+        if (kw.isEmpty()) {
+            toast("请先填写搜索关键词");
+            return;
+        }
+        downloadAsync("搜索下载", () -> netease.search(kw, neteaseLimit));
+    }
+
+    public void startLikesDownload() {
+        downloadAsync("下载我喜欢的音乐", () -> netease.myLikes());
+    }
+
+    /** 配置页「打开网易云原生面板」按钮入口 */
+    public static void onOpenNeteasePanel() {
+        MainPlugin p = INSTANCE;
+        if (p == null) {
+            toast("插件尚未启用");
+            return;
+        }
+        if (!p.neteaseEnabled) {
+            toast("请先在配置中启用网易云功能");
+            return;
+        }
+        try {
+            p.tryInstallNativeUi();
+        } catch (Throwable ignored) {
+        }
+        if (!NeteaseUiBridge.nativeAvailable()) {
+            toast("原生界面未启用：请在模组管理中授予 CLASS_TRANSFORM 权限后重新启用模组");
+            return;
+        }
+        NeteaseUiBridge.openPanel();
+    }
 
     /** 配置页「打开转换记录」按钮入口 */
     public static void onOpenHistory() {

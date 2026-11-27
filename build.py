@@ -20,6 +20,8 @@ except Exception:
 import zipfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+TOOLS = os.path.join(BASE, ".tools", "kotlin-2.4.0")
+KOTLIN_SRC = os.path.join(BASE, "src", "main", "kotlin")
 API_JAR = os.path.join(BASE, "libs", "api.jar")
 PF4J_JAR = os.path.join(BASE, "libs", "pf4j.jar")
 KOTLIN_STDLIB = os.path.join(BASE, "libs", "kotlin-stdlib.jar")
@@ -33,12 +35,69 @@ LIBS_OUT = os.path.join(BUILD, "libs")
 
 PLUGIN_ID = "io.github.spwncm.ncmhelper"
 PLUGIN_CLASS = "io.github.spwncm.ncmhelper.MainPlugin"
-PLUGIN_VERSION = "1.2.6"
+PLUGIN_VERSION = "1.3.0"
 PLUGIN_NAME = "NCM 助手"
 PLUGIN_DESC = "自动解密网易云 NCM、按歌手/专辑归档、内嵌封面并在线补全歌词"
 PLUGIN_PROVIDER = "spwncm"
-PLUGIN_PERMISSIONS = "key-bindings"
+PLUGIN_PERMISSIONS = "key-bindings,class-transform"
 MIN_JDK = 25
+
+
+def find_host_package():
+    """宿主 classpath 归档（jpackage cfg 里的 app.classpath，即 ffmpeg-x64.dll）。"""
+    env = os.environ.get("SALT_HOST_PACKAGE")
+    if env and os.path.isfile(env):
+        return env
+    home = os.environ.get("SALT_HOME") or r"D:\SteamLibrary\steamapps\common\Salt Player for Windows"
+    cand = os.path.join(home, "app", "ffmpeg-x64.dll")
+    return cand if os.path.isfile(cand) else None
+
+
+def compile_kotlin(javac_java):
+    """编译原生 Compose UI（需要 .tools 下的 Kotlin 2.4.0 工具链与宿主归档）。"""
+    kt_files = []
+    for dp, _dn, fn in os.walk(KOTLIN_SRC):
+        for f in fn:
+            if f.endswith(".kt"):
+                kt_files.append(os.path.join(dp, f))
+    if not kt_files:
+        return
+    toolchain = [
+        "kotlin-compiler-embeddable-2.4.0.jar",
+        "kotlin-build-tools-api-2.4.0.jar",
+        "kotlin-stdlib-2.4.0.jar",
+        "kotlin-script-runtime-2.4.0.jar",
+        "kotlin-reflect-1.6.10.jar",
+        "kotlin-daemon-embeddable-2.4.0.jar",
+        "kotlinx-coroutines-core-jvm-1.8.0.jar",
+        "annotations-13.0.jar",
+    ]
+    missing = [f for f in toolchain if not os.path.isfile(os.path.join(TOOLS, f))]
+    if missing:
+        sys.exit("缺少原生 UI 工具链：先运行 python scripts/get_native_toolchain.py\n缺少: %s" % ", ".join(missing))
+    host = find_host_package()
+    if not host:
+        # CI/无游戏环境：跳过原生 UI（本地发布包需要宿主归档才能编译原生界面）
+        print("跳过原生 UI 编译：未找到宿主归档（设置 SALT_HOST_PACKAGE 或 SALT_HOME）")
+        return
+    compile_only = [
+        os.path.join(TOOLS, "foundation-desktop-1.10.3.jar"),
+        os.path.join(TOOLS, "runtime-desktop-1.10.5.jar"),
+    ]
+    compile_cp = os.pathsep.join(compile_only + [CLASSES, API_JAR, KOTLIN_STDLIB, host])
+    plugin_jar = os.path.join(TOOLS, "kotlin-compose-compiler-plugin-embeddable-2.4.0.jar")
+    cmd = [javac_java, "-Dfile.encoding=UTF-8", "-classpath",
+           os.pathsep.join(os.path.join(TOOLS, f) for f in toolchain),
+           "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler",
+           "-no-stdlib", "-no-reflect", "-jvm-target", "25", "-module-name", "ncm-native-ui",
+           "-classpath", compile_cp, "-Xplugin=" + plugin_jar, "-d", CLASSES] + kt_files
+    print("编译原生 Compose UI（%d 个 .kt）…" % len(kt_files))
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        out = (r.stdout or "") + (r.stderr or "")
+        print(out[-4000:])
+        sys.exit("原生 UI 编译失败")
+    print("  原生 UI 编译完成")
 
 
 def find_tool(name):
@@ -138,6 +197,8 @@ def main():
         print(r.stdout)
         print(r.stderr)
         sys.exit(r.returncode)
+
+    compile_kotlin(find_tool("java"))
 
     for dp, dn, fn in os.walk(RES):
         for f in fn:
