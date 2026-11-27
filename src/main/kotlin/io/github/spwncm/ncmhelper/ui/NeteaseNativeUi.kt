@@ -63,6 +63,7 @@ object NeteaseNativeUi {
 
     private var hookHandle: HookHandle? = null
     private val hookHits = java.util.concurrent.atomic.AtomicInteger(0)
+    private val dialogShown = java.util.concurrent.atomic.AtomicBoolean(false)
     private var candidateIndex = 0
 
     internal var visible by mutableStateOf(false)
@@ -96,6 +97,7 @@ object NeteaseNativeUi {
     @JvmStatic
     fun setVisible(value: Boolean) {
         visible = value
+        dialogShown.set(false)
         if (value) refreshStatus()
     }
 
@@ -252,6 +254,8 @@ object NeteaseNativeUi {
         hookHits.incrementAndGet()
     }
 
+    internal fun claimDialog(): Boolean = dialogShown.compareAndSet(false, true)
+
     internal fun refreshStatus() {
         status = NeteaseUiBridge.statusText()
     }
@@ -354,7 +358,8 @@ private class PanelHook : ComposableHook() {
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onHookHit()
         Box(Modifier.size(0.dp))
-        if (NeteaseNativeUi.visible) NeteasePanel()
+        // 某些注入点会按列表项多次调用，这里保证同一时刻只显示一个面板
+        if (NeteaseNativeUi.visible && NeteaseNativeUi.claimDialog()) NeteasePanel()
     }
 }
 
