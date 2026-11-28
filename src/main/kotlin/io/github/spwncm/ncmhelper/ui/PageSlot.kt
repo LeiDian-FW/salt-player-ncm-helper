@@ -186,6 +186,11 @@ object PageSlot {
     fun refresh() {
         pageKey.set(null)
     }
+
+    /** 清除页面 key 记录：每次打开页面前调用，避免残留导致被误判为"用户切换了页面" */
+    fun resetKey() {
+        pageKey.set(null)
+    }
 }
 
 /** 侧边栏「网易云音乐」行：与宿主侧边栏项同样的主题色/间距 */

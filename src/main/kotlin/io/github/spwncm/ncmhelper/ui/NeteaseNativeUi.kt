@@ -127,6 +127,7 @@ object NeteaseNativeUi {
         pageVisible = value
         dialogFallback = false
         dialogShown.set(false)
+        PageSlot.resetKey()
         if (value) {
             refreshStatus()
             if (cards.isEmpty()) loadCards()
@@ -136,6 +137,10 @@ object NeteaseNativeUi {
     /** 侧边栏点击：显示内嵌页面；若内嵌未真正渲染则自动用弹窗兜底 */
     internal fun openEmbedded() {
         Log.info("侧边栏: 打开网易云音乐页面")
+        // 每次打开都重置：弹窗一次性标记、页面 key、内嵌渲染计数
+        dialogShown.set(false)
+        dialogFallback = false
+        PageSlot.resetKey()
         pageVisible = true
         visible = true
         refreshStatus()
@@ -143,7 +148,7 @@ object NeteaseNativeUi {
         val before = embeddedRenderCount.get()
         Thread {
             try {
-                Thread.sleep(600)
+                Thread.sleep(900)
             } catch (_: InterruptedException) {
             }
             if (embeddedRenderCount.get() == before) {
@@ -156,12 +161,19 @@ object NeteaseNativeUi {
     internal fun onEmbeddedRendered() {
         embeddedRenderCount.incrementAndGet()
         Log.info("内嵌页面已组合渲染")
+        // 内嵌已渲染：若兜底弹窗已弹出，自动收起，避免双份界面
+        if (dialogFallback) {
+            dialogFallback = false
+            Log.info("内嵌页面已渲染，自动收起兜底弹窗")
+        }
     }
 
     internal fun closePage() {
         pageVisible = false
         visible = false
         dialogFallback = false
+        dialogShown.set(false)
+        PageSlot.resetKey()
         releaseOverlay()
     }
 
