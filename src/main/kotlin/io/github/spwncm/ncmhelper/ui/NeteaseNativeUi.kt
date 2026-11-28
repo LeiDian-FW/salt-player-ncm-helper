@@ -167,7 +167,7 @@ object NeteaseNativeUi {
         return false
     }
 
-    /** 安装侧边栏入口与主界面内嵌覆盖层 */
+    /** 安装侧边栏入口，并尝试接管宿主页面内容槽实现主界面内嵌显示 */
     private fun installEmbedded() {
         if (sidebarHandle == null) {
             try {
@@ -182,15 +182,13 @@ object NeteaseNativeUi {
             }
         }
         if (overlayHandle == null) {
-            try {
-                overlayHandle = WorkshopApi.hookRegistrar.afterComposable(
-                    "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", "Content",
-                    "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", emptyList(), 60, OverlayHook())
-                embedded = true
-                Log.info("内嵌页面 Hook 已安装（主界面覆盖层）")
-            } catch (t: Throwable) {
-                embedded = false
-                Log.warn("内嵌页面 Hook 安装失败（将回退独立弹窗）: $t")
+            val ok = PageSlot.install()
+            embedded = ok
+            if (ok) {
+                overlayHandle = null
+                Log.info("主界面页面内容槽已接管（内嵌显示，非独立窗口）")
+            } else {
+                Log.warn("页面内容槽接管失败（${PageSlot.failure()}），回退独立弹窗")
             }
         }
     }
@@ -533,23 +531,35 @@ object NeteaseNativeUi {
     )
 }
 
-/** 侧边栏入口：在宿主侧边栏渲染「网易云音乐」一行 */
+/** 侧边栏入口：在宿主「新建歌单」下方渲染「网易云音乐」一行（跟随宿主主题） */
 private class SidebarHook : ComposableHook() {
     @Composable
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onSidebarHit()
-        if (!NeteaseNativeUi.claimSidebarRow()) return
-        androidx.compose.foundation.layout.Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable { NeteaseNativeUi.openEmbedded() }
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 不指定颜色，继承宿主主题内容色
-            BasicText("♪", style = TextStyle(fontSize = 16.sp))
-            Spacer(Modifier.width(10.dp))
-            BasicText("网易云音乐", style = TextStyle(fontSize = 14.sp))
+        val item = runCatching { call.getArgument(0) }.getOrNull()
+        val label = routeLabel(item)
+        val isTarget = label.contains("新建歌单") || label.contains("新建") || label.contains("歌单")
+        val fallback = !isTarget && NeteaseNativeUi.claimSidebarRow()
+        if (!isTarget && !fallback) return
+        if (isTarget && !NeteaseNativeUi.claimSidebarRow()) return
+        NeteaseSidebarRow()
+    }
+
+    /** 从宿主 RouteItem 上读取显示文本（反射 String 字段） */
+    private fun routeLabel(item: Any?): String {
+        if (item == null) return ""
+        return try {
+            val fields = item.javaClass.declaredFields
+            for (field in fields) {
+                if (field.type == String::class.java) {
+                    field.isAccessible = true
+                    val value = field.get(item) as? String
+                    if (!value.isNullOrEmpty()) return value
+                }
+            }
+            ""
+        } catch (_: Throwable) {
+            ""
         }
     }
 }
@@ -833,18 +843,3 @@ private fun QrCanvas(rows: Array<BooleanArray>) {
     }
 }
 
-private fun formatPlayCount(count: Long): String {
-    return when {
-        count >= 100_000_000 -> String.format("%.1f亿", count / 100_000_000.0)
-        count >= 10_000 -> String.format("%.1f万", count / 10_000.0)
-        else -> count.toString()
-    }
-}
-
-private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return ""
-    val totalSeconds = ms / 1000
-    val m = totalSeconds / 60
-    val s = totalSeconds % 60
-    return String.format("%02d:%02d", m, s)
-}
