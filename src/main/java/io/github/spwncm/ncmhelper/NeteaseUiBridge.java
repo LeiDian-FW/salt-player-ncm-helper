@@ -154,14 +154,48 @@ public final class NeteaseUiBridge {
         return dir.toString();
     }
 
-    /** 下载封面图片字节 */
+    /** 网易云图片缩略图参数（大幅减少下载体积、提升加载速度） */
+    private static String withThumb(String url, int size) {
+        if (url == null || url.isEmpty()) return url;
+        if (url.contains("param=")) return url;
+        String sep = url.contains("?") ? "&" : "?";
+        return url + sep + "param=" + size + "y" + size;
+    }
+
+    /** 下载封面图片字节（按 260x260 缩略图拉取） */
     public static byte[] cover(String url) {
         NeteaseClient c = client;
         if (c == null || url == null || url.isEmpty()) return null;
         try {
-            return c.fetchBytes(url);
+            return c.fetchBytes(withThumb(url, 260));
+        } catch (Exception e) {
+            try {
+                return c.fetchBytes(url);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+    }
+
+    /** 下载头像字节（200x200 缩略图） */
+    public static byte[] avatarImage(String url) {
+        NeteaseClient c = client;
+        if (c == null || url == null || url.isEmpty()) return null;
+        try {
+            return c.fetchBytes(withThumb(url, 200));
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /** 账号歌单数量（阻塞，调用方需在后台线程） */
+    public static int myPlaylistCount() {
+        NeteaseClient c = client;
+        if (c == null || !c.isLoggedIn()) return 0;
+        try {
+            return c.myPlaylists().size();
+        } catch (Exception e) {
+            return 0;
         }
     }
 

@@ -105,6 +105,7 @@ object NeteaseNativeUi {
     internal var searchText by mutableStateOf("")
     internal var avatar by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
     internal var accountMenu by mutableStateOf(false)
+    internal var myPlaylistCount by mutableStateOf(-1)
     internal var avatarToken by mutableStateOf(0)
     internal var loadToken by mutableStateOf(0)
 
@@ -349,6 +350,16 @@ object NeteaseNativeUi {
     }
 
     /** 退出登录并刷新界面 */
+    internal fun openAccountMenu() {
+        accountMenu = !accountMenu
+        if (accountMenu && NeteaseUiBridge.loggedIn()) {
+            myPlaylistCount = -1
+            Thread {
+                myPlaylistCount = NeteaseUiBridge.myPlaylistCount()
+            }.start()
+        }
+    }
+
     internal fun logoutAccount() {
         Log.info("账号菜单: 退出登录")
         NeteaseUiBridge.logout()
@@ -370,7 +381,7 @@ object NeteaseNativeUi {
         }
         Thread {
             try {
-                val bytes = NeteaseUiBridge.cover(url) ?: return@Thread
+                val bytes = NeteaseUiBridge.avatarImage(url) ?: return@Thread
                 javax.imageio.ImageIO.setUseCache(false)
                 val img = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes)) ?: return@Thread
                 avatar = img.toComposeImageBitmap()
@@ -425,23 +436,36 @@ object NeteaseNativeUi {
         if (!coversLoading.compareAndSet(false, true)) return
         Thread {
             try {
-                val map = HashMap<String, ImageBitmap>()
                 val cacheDir = NeteaseUiBridge.cacheDir()
-                for (card in list) {
-                    if (card.coverUrl.isEmpty() || covers.containsKey(card.coverUrl)) continue
-                    try {
-                        val bytes = loadCoverBytes(card.coverUrl, cacheDir) ?: continue
-                        // 关闭 ImageIO 磁盘缓存：受限环境下无法创建临时文件
-                        ImageIO.setUseCache(false)
-                        val img = ImageIO.read(ByteArrayInputStream(bytes)) ?: continue
-                        map[card.coverUrl] = img.toComposeImageBitmap()
-                    } catch (_: Throwable) {
+                val pending = list.filter { it.coverUrl.isNotEmpty() && !covers.containsKey(it.coverUrl) }
+                if (pending.isEmpty()) return@Thread
+                val map = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap>()
+                // 并行下载/解码封面（最多 6 个并发），显著缩短加载时间
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+                val latch = java.util.concurrent.CountDownLatch(pending.size)
+                for (card in pending) {
+                    pool.execute {
+                        try {
+                            val bytes = loadCoverBytes(card.coverUrl, cacheDir) ?: return@execute
+                            javax.imageio.ImageIO.setUseCache(false)
+                            val stream = javax.imageio.stream.MemoryCacheImageInputStream(
+                                ByteArrayInputStream(bytes))
+                            val img = javax.imageio.ImageIO.read(stream)
+                            stream.close()
+                            if (img != null) map[card.coverUrl] = img.toComposeImageBitmap()
+                        } catch (_: Throwable) {
+                        } finally {
+                            latch.countDown()
+                        }
                     }
                 }
+                latch.await(15, java.util.concurrent.TimeUnit.SECONDS)
+                pool.shutdownNow()
                 if (map.isNotEmpty()) {
                     covers = covers + map
-                    Log.info("原生面板: 封面加载 " + map.size + " 张")
+                    Log.info("原生面板: 封面加载 " + map.size + " 张（并行）")
                 }
+            } catch (_: Throwable) {
             } finally {
                 coversLoading.set(false)
             }

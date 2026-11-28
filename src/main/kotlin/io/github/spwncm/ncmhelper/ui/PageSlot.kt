@@ -366,7 +366,16 @@ private fun AccountMenuOverlay() {
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
+            val count = NeteaseNativeUi.myPlaylistCount
+            MenuAction(
+                "我的歌单" + (if (count >= 0) "（$count）" else "…"),
+                danger = false
+            ) {
+                NeteaseNativeUi.accountMenu = false
+                NeteaseNativeUi.switchTab("mine")
+            }
+            Spacer(Modifier.height(8.dp))
             MenuAction("退出登录", danger = true) { NeteaseNativeUi.logoutAccount() }
             Spacer(Modifier.height(8.dp))
             MenuAction("关闭") { NeteaseNativeUi.accountMenu = false }
@@ -441,7 +450,7 @@ private fun AccountAvatar() {
             .size(30.dp)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.18f))
-            .clickable { NeteaseNativeUi.accountMenu = !NeteaseNativeUi.accountMenu },
+            .clickable { NeteaseNativeUi.openAccountMenu() },
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
