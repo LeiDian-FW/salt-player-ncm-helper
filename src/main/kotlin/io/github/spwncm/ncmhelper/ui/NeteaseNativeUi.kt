@@ -1,4 +1,4 @@
-@file:OptIn(com.xuncorp.spw.workshop.api.UnstableSpwWorkshopApi::class)
+@file:OptIn(com.xuncorp.spw.workshop.api.UnstableSpwWorkshopApi::class, androidx.compose.runtime.InternalComposeApi::class)
 
 package io.github.spwncm.ncmhelper.ui
 
@@ -616,6 +616,7 @@ private class SidebarHook : ComposableHook() {
     @Composable
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onSidebarHit()
+        captureNavigator()
         val item = runCatching { call.getArgument(0) }.getOrNull()
         val routeName = routeClassName(item)
         // 宿主侧边栏的「新建歌单」路由是 ScreenRoute$NewPlaylist：渲染在其下方
@@ -634,6 +635,32 @@ private class SidebarHook : ComposableHook() {
     }
 
     /** 从宿主 RouteItem 上读取显示文本（反射 String 字段） */
+    /** 在组合上下文中读取宿主 Navigator（currentComposer 只能在 @Composable 中读取） */
+    @Composable
+    private fun captureNavigator() {
+        if (NeteaseRoute.hasNavigator()) return
+        val composer = androidx.compose.runtime.currentComposer
+        readNavigatorWithComposer(composer)
+    }
+
+    /** 反射读取 CompositionLocal<Navigator>.current（非组合代码，异常安全） */
+    private fun readNavigatorWithComposer(composer: Any) {
+        try {
+            val host = PageSlot::class.java.classLoader
+            val localClass = Class.forName("com.xuncorp.voxzen.ui.navigation.AppNavigationKt", true, host)
+            val local = localClass.getMethod("getLocalNavigator").invoke(null)
+            val current = local.javaClass.getMethod(
+                "getCurrent", androidx.compose.runtime.Composer::class.java, Int::class.javaPrimitiveType
+            ).invoke(local, composer, 0)
+            if (current != null) {
+                NeteaseRoute.remember(current)
+                Log.info("已从宿主 CompositionLocal 读取 Navigator: " + current.javaClass.name)
+            }
+        } catch (t: Throwable) {
+            Log.warn("读取 Navigator 失败: " + t)
+        }
+    }
+
     /** 读取宿主 RouteItem 里的 ScreenRoute 具体类型名（如 NewPlaylist / Settings） */
     private fun routeClassName(item: Any?): String {
         if (item == null) return ""
