@@ -314,7 +314,7 @@ internal fun NeteaseEmbeddedPage() {
                 Spacer(Modifier.height(10.dp))
                 EmbeddedTabs()
                 Spacer(Modifier.height(14.dp))
-                EmbeddedGrid()
+                EmbeddedGrid(Modifier.weight(1f))
                 Spacer(Modifier.height(10.dp))
             }
             if (NeteaseNativeUi.dlVisible) EmbeddedFooter()
@@ -604,10 +604,10 @@ private fun EmbeddedTabs() {
 }
 
 @Composable
-private fun EmbeddedGrid() {
+private fun EmbeddedGrid(modifier: Modifier = Modifier) {
     val cards = NeteaseNativeUi.cards
     if (cards.isEmpty()) {
-        Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
+        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(
                 if (NeteaseNativeUi.loading) "正在加载…" else "暂无内容（点「刷新」或先点「登录」）",
                 style = LocalTextStyle.current.copy(fontSize = 13.sp),
@@ -616,10 +616,11 @@ private fun EmbeddedGrid() {
         }
         return
     }
-    Column {
-        cards.chunked(GRID_COLUMNS).take(2).forEach { rowCards ->
+    val rows = cards.chunked(GRID_COLUMNS)
+    LazyColumn(modifier.fillMaxWidth()) {
+        items(rows.size) { rowIndex ->
             Row {
-                rowCards.forEach { card ->
+                rows[rowIndex].forEach { card ->
                     EmbeddedCard(card)
                     Spacer(Modifier.width(12.dp))
                 }

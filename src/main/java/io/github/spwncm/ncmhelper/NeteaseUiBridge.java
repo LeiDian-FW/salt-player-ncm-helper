@@ -132,8 +132,8 @@ public final class NeteaseUiBridge {
         NeteaseClient c = client;
         if (c == null) throw new IllegalStateException("插件未就绪");
         return switch (tab) {
-            case "playlist" -> c.recommendPlaylists(10);
-            case "newsong" -> c.newSongs(10);
+            case "playlist" -> c.recommendPlaylists(20);
+            case "newsong" -> c.newSongs(20);
             case "mine" -> c.myPlaylists();
             case "daily" -> c.dailySongs();
             case "roam" -> c.hotSongs(10);

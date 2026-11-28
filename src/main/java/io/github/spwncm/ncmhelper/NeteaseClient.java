@@ -376,7 +376,7 @@ public final class NeteaseClient {
         ensureProfile();
         if (uid == 0) throw new IOException("未获取到账号信息，请先登录");
         Map<String, Object> d = getJson("https://music.163.com/api/user/playlist?uid=" + uid
-                + "&limit=50&offset=0", true);
+                + "&limit=1000&offset=0", true);
         java.util.List<Card> out = new java.util.ArrayList<>();
         for (Object o : Json.asList(d.get("playlist"))) {
             Map<String, Object> m = Json.asMap(o);
