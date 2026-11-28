@@ -590,35 +590,40 @@ public final class NeteaseClient {
         HttpURLConnection conn = open(url, "GET", false);
         long total = conn.getContentLengthLong();
         long done = 0;
-        boolean moved = false;
-        try (InputStream in = conn.getInputStream();
-             OutputStream out = Files.newOutputStream(tmp)) {
-            byte[] buf = new byte[1 << 16];
-            int n;
-            long lastReport = 0;
-            while ((n = in.read(buf)) > 0) {
-                if (cancel != null && cancel.getAsBoolean()) {
-                    throw new DownloadCancelled();
-                }
-                out.write(buf, 0, n);
-                done += n;
-                if (progress != null && (done - lastReport >= (1 << 16) || (total > 0 && done >= total))) {
-                    lastReport = done;
-                    progress.accept(done, total);
+        boolean completed = false;
+        try {
+            try (InputStream in = conn.getInputStream();
+                 OutputStream out = Files.newOutputStream(tmp)) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                long lastReport = 0;
+                while ((n = in.read(buf)) > 0) {
+                    if (cancel != null && cancel.getAsBoolean()) {
+                        throw new DownloadCancelled();
+                    }
+                    out.write(buf, 0, n);
+                    done += n;
+                    if (progress != null && (done - lastReport >= (1 << 16) || (total > 0 && done >= total))) {
+                        lastReport = done;
+                        progress.accept(done, total);
+                    }
                 }
             }
+            if (total > 0 && done < total) {
+                throw new IOException("下载不完整: " + done + "/" + total);
+            }
+            Files.move(tmp, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            completed = true;
+            return done;
         } finally {
             conn.disconnect();
-            if (!moved) {
+            if (!completed) {
                 try {
                     Files.deleteIfExists(tmp);
                 } catch (IOException ignored) {
                 }
             }
         }
-        Files.move(tmp, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        moved = true;
-        return done;
     }
 
     /** 根据下载链接推断扩展名 */
