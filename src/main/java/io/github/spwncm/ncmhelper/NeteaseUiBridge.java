@@ -103,6 +103,55 @@ public final class NeteaseUiBridge {
         return c.myLikes();
     }
 
+    /** 发现页数据：tab = playlist / newsong / mine / daily */
+    public static java.util.List<NeteaseClient.Card> discovery(String tab) throws Exception {
+        NeteaseClient c = client;
+        if (c == null) throw new IllegalStateException("插件未就绪");
+        return switch (tab) {
+            case "playlist" -> c.recommendPlaylists(10);
+            case "newsong" -> c.newSongs(10);
+            case "mine" -> c.myPlaylists();
+            case "daily" -> c.dailySongs();
+            default -> throw new IllegalArgumentException("未知页签: " + tab);
+        };
+    }
+
+    /** 下载封面图片字节 */
+    public static byte[] cover(String url) {
+        NeteaseClient c = client;
+        if (c == null || url == null || url.isEmpty()) return null;
+        try {
+            return c.fetchBytes(url);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 下载单曲（发现页卡片点击） */
+    public static void downloadCard(long id, String name, String artist, String kind, ProgressSink sink) {
+        if ("playlist".equals(kind)) {
+            downloadAsync("playlist", String.valueOf(id), downloadLimit(), sink);
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                MainPlugin p = MainPlugin.instance();
+                if (p == null) throw new IllegalStateException("插件未就绪");
+                NeteaseClient.Song song = new NeteaseClient.Song();
+                song.id = id;
+                song.name = name == null ? "" : name;
+                if (artist != null && !artist.isBlank()) song.artists.add(artist);
+                NeteaseDownloader dl = new NeteaseDownloader(client,
+                        java.nio.file.Paths.get(p.neteaseLibraryPath()), p.historyRef());
+                dl.download(java.util.List.of(song), 1, true, new NativeDownloadListener(sink));
+            } catch (Throwable e) {
+                sink.error(String.valueOf(e));
+            }
+        }, "netease-native-song-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
     /** 下载列表中的歌曲（异步），kind: search / playlist / likes */
     public static void downloadAsync(String kind, String argument, int limit, ProgressSink sink) {
         downloadCancelled = false;

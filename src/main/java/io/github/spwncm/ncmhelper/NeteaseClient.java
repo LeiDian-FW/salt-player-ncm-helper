@@ -51,6 +51,18 @@ public final class NeteaseClient {
         }
     }
 
+    /** 发现页卡片（歌单或歌曲） */
+    public static final class Card {
+        public long id;
+        public String title = "";
+        public String subtitle = "";
+        public String coverUrl = "";
+        public long duration;      // 毫秒（歌曲）
+        public int trackCount;     // 曲目数（歌单）
+        public long playCount;     // 播放量（歌单）
+        public String kind = "playlist"; // playlist / song
+    }
+
     /** 登录会话：eapi（新客户端协议）或 api（旧协议） */
     public static final class QrSession {
         public final String key;
@@ -296,6 +308,116 @@ public final class NeteaseClient {
         }
         if (likeId == 0) throw new IOException("未找到「我喜欢的音乐」歌单");
         return playlist(likeId);
+    }
+
+    // ---------------- 发现页数据 ----------------
+    /** 推荐歌单 */
+    public java.util.List<Card> recommendPlaylists(int limit) throws IOException {
+        Map<String, Object> d = getJson("https://music.163.com/api/personalized/playlist?limit="
+                + Math.max(1, Math.min(50, limit)), true);
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (Object o : Json.asList(d.get("result"))) {
+            Map<String, Object> m = Json.asMap(o);
+            Card c = new Card();
+            c.id = Json.lng(m, "id", 0);
+            c.title = Json.str(m, "name", "");
+            c.coverUrl = Json.str(m, "picUrl", "");
+            c.trackCount = (int) Json.lng(m, "trackCount", 0);
+            c.playCount = Json.lng(m, "playCount", 0);
+            c.subtitle = c.trackCount + " 首";
+            c.kind = "playlist";
+            out.add(c);
+        }
+        return out;
+    }
+
+    /** 推荐新歌 */
+    public java.util.List<Card> newSongs(int limit) throws IOException {
+        Map<String, Object> d = getJson("https://music.163.com/api/personalized/newsong?limit="
+                + Math.max(1, Math.min(50, limit)), true);
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (Object o : Json.asList(d.get("result"))) {
+            Map<String, Object> m = Json.asMap(o);
+            Map<String, Object> song = Json.asMap(m.get("song"));
+            Card c = new Card();
+            c.id = Json.lng(song, "id", Json.lng(m, "id", 0));
+            c.title = Json.str(song, "name", Json.str(m, "name", ""));
+            c.duration = Json.lng(song, "duration", 0);
+            Map<String, Object> album = Json.asMap(song.get("album"));
+            c.coverUrl = Json.str(album, "picUrl", Json.str(m, "picUrl", ""));
+            StringBuilder artists = new StringBuilder();
+            for (Object a : Json.asList(song.get("artists"))) {
+                String n = Json.str(Json.asMap(a), "name", "");
+                if (!n.isEmpty()) {
+                    if (artists.length() > 0) artists.append(" / ");
+                    artists.append(n);
+                }
+            }
+            c.subtitle = artists.toString();
+            c.kind = "song";
+            out.add(c);
+        }
+        return out;
+    }
+
+    /** 我的歌单 */
+    public java.util.List<Card> myPlaylists() throws IOException {
+        ensureProfile();
+        if (uid == 0) throw new IOException("未获取到账号信息，请先登录");
+        Map<String, Object> d = getJson("https://music.163.com/api/user/playlist?uid=" + uid
+                + "&limit=50&offset=0", true);
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (Object o : Json.asList(d.get("playlist"))) {
+            Map<String, Object> m = Json.asMap(o);
+            Card c = new Card();
+            c.id = Json.lng(m, "id", 0);
+            c.title = Json.str(m, "name", "");
+            c.coverUrl = Json.str(m, "coverImgUrl", Json.str(m, "picUrl", ""));
+            c.trackCount = (int) Json.lng(m, "trackCount", 0);
+            c.subtitle = c.trackCount + " 首";
+            c.kind = "playlist";
+            out.add(c);
+        }
+        return out;
+    }
+
+    /** 每日推荐歌曲 */
+    public java.util.List<Card> dailySongs() throws IOException {
+        Map<String, Object> d = getJson("https://music.163.com/api/v3/discovery/recommend/songs?limit=20", true);
+        Map<String, Object> data = Json.asMap(d.get("data"));
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (Object o : Json.asList(data.get("dailySongs"))) {
+            Map<String, Object> song = Json.asMap(o);
+            Card c = new Card();
+            c.id = Json.lng(song, "id", 0);
+            c.title = Json.str(song, "name", "");
+            c.duration = Json.lng(song, "duration", 0);
+            Map<String, Object> album = Json.asMap(song.get("al"));
+            c.coverUrl = Json.str(album, "picUrl", "");
+            StringBuilder artists = new StringBuilder();
+            for (Object a : Json.asList(song.get("ar"))) {
+                String n = Json.str(Json.asMap(a), "name", "");
+                if (!n.isEmpty()) {
+                    if (artists.length() > 0) artists.append(" / ");
+                    artists.append(n);
+                }
+            }
+            c.subtitle = artists.toString();
+            c.kind = "song";
+            out.add(c);
+        }
+        return out;
+    }
+
+    /** 下载图片字节（封面等） */
+    public byte[] fetchBytes(String url) throws IOException {
+        HttpURLConnection conn = open(url, "GET", false);
+        conn.setRequestProperty("Referer", "https://music.163.com/");
+        try (InputStream in = conn.getInputStream()) {
+            return in.readAllBytes();
+        } finally {
+            conn.disconnect();
+        }
     }
 
     /** 获取歌曲下载地址（无版权/VIP 限制时返回 null） */
