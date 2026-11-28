@@ -278,14 +278,14 @@ internal fun NeteaseSidebarRow(onClick: () -> Unit = { NeteaseNativeUi.openEmbed
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (NeteaseNativeUi.pageVisible) content.copy(alpha = 0.10f) else Color.Transparent)
+            .background(if (NeteaseNativeUi.pageVisible) Color.White.copy(alpha = 0.16f) else Color.Transparent)
             .clickable { onClick() }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("♪", style = LocalTextStyle.current.copy(fontSize = 15.sp))
+        Text("♪", style = LocalTextStyle.current.copy(fontSize = 15.sp), color = Color.White)
         Spacer(Modifier.width(10.dp))
-        Text("网易云音乐", style = LocalTextStyle.current.copy(fontSize = 14.sp))
+        Text("网易云音乐", style = LocalTextStyle.current.copy(fontSize = 14.sp), color = Color.White)
     }
 }
 
@@ -313,29 +313,30 @@ internal fun NeteaseEmbeddedPage() {
 @Composable
 private fun EmbeddedHeader() {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Text("网易云音乐", style = LocalTextStyle.current.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold))
+        Text("网易云音乐", style = LocalTextStyle.current.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+            color = Color.White)
         Spacer(Modifier.width(12.dp))
         Text(
             NeteaseNativeUi.status.ifEmpty { "未登录" },
             style = LocalTextStyle.current.copy(fontSize = 12.sp),
-            color = LocalContentColor.current.copy(alpha = 0.6f)
+            color = Color.White.copy(alpha = 0.7f)
         )
         Spacer(Modifier.weight(1f))
         Box(
             Modifier
                 .width(200.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(LocalContentColor.current.copy(alpha = 0.08f))
+                .background(Color.White.copy(alpha = 0.14f))
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             if (NeteaseNativeUi.searchText.isEmpty()) {
                 Text("搜索歌曲 / 歌手", style = LocalTextStyle.current.copy(fontSize = 12.sp),
-                    color = LocalContentColor.current.copy(alpha = 0.5f))
+                    color = Color.White.copy(alpha = 0.6f))
             }
             BasicTextField(
                 value = NeteaseNativeUi.searchText,
                 onValueChange = { NeteaseNativeUi.searchText = it },
-                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = LocalContentColor.current),
+                textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color.White),
                 singleLine = true
             )
         }
@@ -349,14 +350,13 @@ private fun EmbeddedHeader() {
 
 @Composable
 private fun EmbeddedTabs() {
-    val content = LocalContentColor.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         APP_TABS.forEachIndexed { index, (label, key) ->
             val selected = NeteaseNativeUi.tab == key
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (selected) content.copy(alpha = 0.12f) else Color.Transparent)
+                    .background(if (selected) Color.White.copy(alpha = 0.18f) else Color.Transparent)
                     .clickable { NeteaseNativeUi.switchTab(key) }
                     .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
@@ -366,7 +366,7 @@ private fun EmbeddedTabs() {
                         fontSize = 13.sp,
                         fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
                     ),
-                    color = if (selected) content else content.copy(alpha = 0.6f)
+                    color = if (selected) Color.White else Color.White.copy(alpha = 0.7f)
                 )
             }
             if (index < APP_TABS.size - 1) Spacer(Modifier.width(6.dp))
@@ -382,7 +382,7 @@ private fun EmbeddedGrid() {
             Text(
                 if (NeteaseNativeUi.loading) "正在加载…" else "暂无内容（点「刷新」或先点「登录」）",
                 style = LocalTextStyle.current.copy(fontSize = 13.sp),
-                color = LocalContentColor.current.copy(alpha = 0.6f)
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
         return
@@ -402,14 +402,13 @@ private fun EmbeddedGrid() {
 
 @Composable
 private fun EmbeddedCard(card: NeteaseClient.Card) {
-    val content = LocalContentColor.current
     Column(Modifier.width(CARD_WIDTH).clickable { NeteaseNativeUi.openCard(card) }) {
         Box(
             Modifier
                 .width(CARD_WIDTH)
                 .height(COVER_HEIGHT)
                 .clip(RoundedCornerShape(10.dp))
-                .background(content.copy(alpha = 0.08f)),
+                .background(Color.White.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             val bitmap = NeteaseNativeUi.covers[card.coverUrl]
@@ -418,7 +417,7 @@ private fun EmbeddedCard(card: NeteaseClient.Card) {
                     modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
                 Text("♪", style = LocalTextStyle.current.copy(fontSize = 24.sp),
-                    color = content.copy(alpha = 0.4f))
+                    color = Color.White.copy(alpha = 0.5f))
             }
             if (card.kind == "song") {
                 Box(Modifier.align(Alignment.BottomEnd).padding(6.dp)
@@ -440,53 +439,53 @@ private fun EmbeddedCard(card: NeteaseClient.Card) {
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(card.title, style = LocalTextStyle.current.copy(fontSize = 13.sp), maxLines = 1)
+        Text(card.title, style = LocalTextStyle.current.copy(fontSize = 13.sp),
+            color = Color.White, maxLines = 1)
         Spacer(Modifier.height(2.dp))
         Text(card.subtitle, style = LocalTextStyle.current.copy(fontSize = 11.sp),
-            color = content.copy(alpha = 0.6f), maxLines = 1)
+            color = Color.White.copy(alpha = 0.7f), maxLines = 1)
     }
 }
 
 @Composable
 private fun EmbeddedFooter() {
-    val content = LocalContentColor.current
     Column {
         if (NeteaseNativeUi.dlActive || NeteaseNativeUi.dlText.isNotEmpty()) {
-            Text(NeteaseNativeUi.dlText.ifEmpty { "下载中…" }, style = LocalTextStyle.current.copy(fontSize = 12.sp))
+            Text(NeteaseNativeUi.dlText.ifEmpty { "下载中…" },
+                style = LocalTextStyle.current.copy(fontSize = 12.sp), color = Color.White)
             Spacer(Modifier.height(6.dp))
             Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
-                .background(content.copy(alpha = 0.12f))) {
+                .background(Color.White.copy(alpha = 0.22f))) {
                 val f = NeteaseNativeUi.dlFraction.coerceIn(0f, 1f)
                 if (f > 0f) {
                     Box(Modifier.fillMaxWidth(f).height(6.dp).clip(RoundedCornerShape(3.dp))
-                        .background(content.copy(alpha = 0.75f)))
+                        .background(Color.White))
                 }
             }
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(NeteaseNativeUi.dlStats, style = LocalTextStyle.current.copy(fontSize = 11.sp),
-                    color = content.copy(alpha = 0.6f))
+                    color = Color.White.copy(alpha = 0.7f))
                 Spacer(Modifier.width(10.dp))
                 if (NeteaseNativeUi.dlActive) ThemeAction("取消下载") { NeteaseUiBridge.downloadCancel() }
             }
         } else if (NeteaseNativeUi.message.isNotEmpty()) {
             Text(NeteaseNativeUi.message, style = LocalTextStyle.current.copy(fontSize = 12.sp),
-                color = content.copy(alpha = 0.7f))
+                color = Color.White.copy(alpha = 0.85f))
         }
     }
 }
 
 @Composable
 private fun ThemeAction(text: String, onClick: () -> Unit) {
-    val content = LocalContentColor.current
     Box(
         Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(content.copy(alpha = 0.05f))
+            .background(Color.White.copy(alpha = 0.14f))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
-        Text(text, style = LocalTextStyle.current.copy(fontSize = 12.sp), color = content)
+        Text(text, style = LocalTextStyle.current.copy(fontSize = 12.sp), color = Color.White)
     }
 }
 
