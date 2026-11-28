@@ -261,12 +261,14 @@ object NeteaseNativeUi {
     }
 
     internal fun startScan() {
+        Log.info("原生面板: 点击扫码登录")
         message = "正在申请二维码…"
         qrRows = null
         scanToken++
     }
 
     internal fun clipboardLogin() {
+        Log.info("原生面板: 点击从剪贴板登录")
         Thread {
             message = try {
                 NeteaseUiBridge.clipboardLogin()
@@ -279,6 +281,7 @@ object NeteaseNativeUi {
 
     /** 加载搜索或歌单列表（后台线程） */
     internal fun loadSongs(kind: String) {
+        Log.info("原生面板: 加载列表 " + kind + " keyword=" + keyword + " playlist=" + playlistId)
         if (busy) return
         busy = true
         message = "正在加载…"
@@ -306,6 +309,7 @@ object NeteaseNativeUi {
 
     /** 原生面板内开始下载（kind: search / playlist / likes） */
     internal fun startDownload(kind: String) {
+        Log.info("原生面板: 开始下载 " + kind + " arg=" + (if (kind == "playlist") playlistId else keyword))
         if (dlActive) return
         if (!NeteaseUiBridge.loggedIn()) {
             message = "请先登录网易云"
@@ -365,7 +369,13 @@ private class PanelHook : ComposableHook() {
 
 @Composable
 private fun NeteasePanel() {
-    Dialog(onDismissRequest = { NeteaseNativeUi.visible = false }) {
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        Log.info("原生面板已显示")
+        onDispose { Log.info("原生面板已关闭") }
+    }
+    Dialog(onDismissRequest = {
+        NeteaseNativeUi.visible = false
+    }) {
         NeteasePanelContent()
     }
 }
@@ -527,7 +537,10 @@ private fun Tab(text: String, index: Int) {
     Box(
         Modifier
             .background(if (selected) ACCENT else CHIP, RoundedCornerShape(8.dp))
-            .clickable { NeteaseNativeUi.tab = index }
+            .clickable {
+                NeteaseNativeUi.tab = index
+                Log.info("原生面板: 切换到页签 " + text)
+            }
             .padding(horizontal = 14.dp, vertical = 7.dp)
     ) {
         BasicText(text, style = TextStyle(color = if (selected) Color.White else DIM, fontSize = 13.sp))
