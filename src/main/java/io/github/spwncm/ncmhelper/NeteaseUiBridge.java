@@ -265,6 +265,12 @@ public final class NeteaseUiBridge {
         return nick.isEmpty() ? "已登录" : "已登录：" + nick;
     }
 
+    /** 已登录账号头像 URL（未登录或未获取到为空串） */
+    public static String avatarUrl() {
+        NeteaseClient c = client;
+        return c == null ? "" : c.avatarUrl();
+    }
+
     public static String nickname() {
         NeteaseClient c = client;
         return c == null ? "" : c.nickname();

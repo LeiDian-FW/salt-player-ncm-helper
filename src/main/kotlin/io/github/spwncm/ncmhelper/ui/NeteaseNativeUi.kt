@@ -103,6 +103,8 @@ object NeteaseNativeUi {
     internal var covers by mutableStateOf<Map<String, ImageBitmap>>(emptyMap())
     internal var loading by mutableStateOf(false)
     internal var searchText by mutableStateOf("")
+    internal var avatar by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    internal var avatarToken by mutableStateOf(0)
     internal var loadToken by mutableStateOf(0)
 
     internal var dlActive by mutableStateOf(false)
@@ -342,6 +344,26 @@ object NeteaseNativeUi {
 
     internal fun refreshStatus() {
         status = NeteaseUiBridge.statusText()
+        avatarToken++
+    }
+
+    /** 加载账号头像（后台线程，内存解码） */
+    internal fun loadAvatar() {
+        val url = NeteaseUiBridge.avatarUrl()
+        if (url.isEmpty()) {
+            avatar = null
+            return
+        }
+        Thread {
+            try {
+                val bytes = NeteaseUiBridge.cover(url) ?: return@Thread
+                javax.imageio.ImageIO.setUseCache(false)
+                val img = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes)) ?: return@Thread
+                avatar = img.toComposeImageBitmap()
+                Log.info("账号头像已加载")
+            } catch (_: Throwable) {
+            }
+        }.start()
     }
 
     internal fun switchTab(key: String) {

@@ -90,6 +90,7 @@ public final class NeteaseClient {
     private final CookieManager cookieManager;
     private volatile String cookie = "";
     private volatile String nickname = "";
+    private volatile String avatarUrl = "";
     private volatile long uid = 0L;
     private volatile Consumer<String> logger = s -> {
     };
@@ -123,6 +124,10 @@ public final class NeteaseClient {
 
     public String nickname() {
         return nickname;
+    }
+
+    public String avatarUrl() {
+        return avatarUrl;
     }
 
     public long uid() {
@@ -234,6 +239,8 @@ public final class NeteaseClient {
             uid = Json.lng(account, "id", 0);
             String nn = Json.str(profile, "nickname", "");
             if (!nn.isEmpty()) nickname = nn;
+            String avatar = Json.str(profile, "avatarUrl", "");
+            if (!avatar.isEmpty()) avatarUrl = avatar;
             return uid != 0;
         } catch (Exception e) {
             log("获取账号信息失败: " + e.getMessage());

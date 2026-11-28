@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.LocalContentColor
@@ -294,6 +295,9 @@ internal fun NeteaseEmbeddedPage() {
     androidx.compose.runtime.LaunchedEffect(Unit) {
         NeteaseNativeUi.onEmbeddedRendered()
     }
+    androidx.compose.runtime.LaunchedEffect(NeteaseNativeUi.avatarToken) {
+        NeteaseNativeUi.loadAvatar()
+    }
     // 不绘制自己的背景：直接使用宿主页面背景
     Column(
         Modifier
@@ -345,6 +349,28 @@ private fun EmbeddedHeader() {
         ThemeAction("登录") { NeteaseNativeUi.clipboardLogin() }
         ThemeAction("刷新") { NeteaseNativeUi.loadCards() }
         ThemeAction("关闭") { NeteaseNativeUi.closePage() }
+        Spacer(Modifier.width(10.dp))
+        AccountAvatar()
+    }
+}
+
+/** 右上角账号头像：圆形，未登录时显示占位 */
+@Composable
+private fun AccountAvatar() {
+    val bitmap = NeteaseNativeUi.avatar
+    Box(
+        Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(bitmap = bitmap, contentDescription = "账号头像",
+                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else {
+            Text("♪", style = LocalTextStyle.current.copy(fontSize = 13.sp), color = Color.White.copy(alpha = 0.8f))
+        }
     }
 }
 
