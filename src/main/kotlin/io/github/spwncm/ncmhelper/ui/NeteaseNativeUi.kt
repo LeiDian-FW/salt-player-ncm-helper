@@ -81,7 +81,8 @@ object NeteaseNativeUi {
     private var overlayHandle: HookHandle? = null
     private val hookHits = java.util.concurrent.atomic.AtomicInteger(0)
     private val dialogShown = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val sidebarRowShown = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val sidebarTargetLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val seenNewPlaylist = java.util.concurrent.atomic.AtomicBoolean(false)
     private val overlayClaimed = java.util.concurrent.atomic.AtomicBoolean(false)
     private val sidebarHits = java.util.concurrent.atomic.AtomicInteger(0)
     private val overlayHits = java.util.concurrent.atomic.AtomicInteger(0)
@@ -175,7 +176,7 @@ object NeteaseNativeUi {
                     "androidx.compose.ui.\u0b1a", "\u037f",
                     "androidx.compose.ui.\u0b1a$\u052e",
                     listOf("androidx.compose.ui.\u063a$\u052a"), 60, SidebarHook())
-                sidebarRowShown.set(false)
+                sidebarTargetLogged.set(false)
                 Log.info("侧边栏入口 Hook 已安装")
             } catch (t: Throwable) {
                 Log.warn("侧边栏入口 Hook 安装失败: $t")
@@ -201,7 +202,12 @@ object NeteaseNativeUi {
         overlayHits.incrementAndGet()
     }
 
-    internal fun claimSidebarRow(): Boolean = sidebarRowShown.compareAndSet(false, true)
+    internal fun markSidebarTarget(): Boolean {
+        seenNewPlaylist.set(true)
+        return sidebarTargetLogged.compareAndSet(false, true)
+    }
+
+    internal fun newPlaylistSeen(): Boolean = seenNewPlaylist.get()
 
     internal fun claimOverlay(): Boolean = overlayClaimed.compareAndSet(false, true)
 
@@ -537,41 +543,37 @@ private class SidebarHook : ComposableHook() {
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onSidebarHit()
         val item = runCatching { call.getArgument(0) }.getOrNull()
-        val label = routeLabel(item)
-        val isTarget = label.contains("新建歌单")
-        if (isTarget) {
-            if (!NeteaseNativeUi.claimSidebarRow()) return
-            Log.info("侧边栏: 命中「新建歌单」，在其下方渲染入口")
+        val routeName = routeClassName(item)
+        // 宿主侧边栏的「新建歌单」路由是 ScreenRoute$NewPlaylist：渲染在其下方
+        if (routeName == "NewPlaylist") {
+            if (NeteaseNativeUi.markSidebarTarget()) {
+                Log.info("侧边栏: 命中 NewPlaylist（新建歌单），在其下方渲染网易云入口")
+            }
             NeteaseSidebarRow()
             return
         }
-        // 找不到「新建歌单」时保底：仅在从未渲染过的情况下渲染一次
-        if (!NeteaseNativeUi.claimSidebarRow()) return
-        Log.info("侧边栏: 未匹配到新建歌单（label=" + label + "），使用保底位置")
-        NeteaseSidebarRow()
+        // 兼容其他宿主版本：未找到 NewPlaylist 时，在 Settings（设置）之后保底渲染
+        if (!NeteaseNativeUi.newPlaylistSeen() && routeName == "Settings") {
+            if (NeteaseNativeUi.markSidebarTarget()) {
+                Log.info("侧边栏: 未找到 NewPlaylist，保底渲染在 Settings 之后")
+            }
+            NeteaseSidebarRow()
+        }
     }
 
     /** 从宿主 RouteItem 上读取显示文本（反射 String 字段） */
-    private fun routeLabel(item: Any?): String {
+    /** 读取宿主 RouteItem 里的 ScreenRoute 具体类型名（如 NewPlaylist / Settings） */
+    private fun routeClassName(item: Any?): String {
         if (item == null) return ""
         return try {
-            val texts = StringBuilder()
             for (field in item.javaClass.declaredFields) {
-                field.isAccessible = true
-                if (field.type == String::class.java) {
-                    texts.append(field.get(item)).append('|')
+                if (field.type.name.contains("ScreenRoute")) {
+                    field.isAccessible = true
+                    val route = field.get(item) ?: continue
+                    return route.javaClass.simpleName
                 }
             }
-            texts.append(item.toString()).append('|')
-            val routeField = item.javaClass.declaredFields.firstOrNull {
-                it.type.name.contains("ScreenRoute")
-            }
-            if (routeField != null) {
-                routeField.isAccessible = true
-                val route = routeField.get(item)
-                texts.append(route?.javaClass?.simpleName).append('|').append(route?.toString())
-            }
-            texts.toString()
+            ""
         } catch (_: Throwable) {
             ""
         }

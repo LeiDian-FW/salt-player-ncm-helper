@@ -219,12 +219,12 @@ internal fun NeteaseEmbeddedPage() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .background(colors.background)
     ) {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = 22.dp, vertical = 16.dp)
+                .padding(horizontal = 18.dp, vertical = 12.dp)
         ) {
             EmbeddedHeader()
             Spacer(Modifier.height(12.dp))
@@ -256,7 +256,7 @@ private fun EmbeddedHeader() {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         BasicText(
             "网易云音乐",
-            style = typography.titleLarge.merge(TextStyle(color = colors.onSurface, fontWeight = FontWeight.Bold))
+            style = typography.headlineSmall.merge(TextStyle(color = colors.onBackground))
         )
         Spacer(Modifier.width(14.dp))
         BasicText(
