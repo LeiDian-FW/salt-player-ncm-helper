@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -295,11 +296,62 @@ public final class NeteaseClient {
     }
 
     public List<Song> playlist(long playlistId) throws IOException {
+        // v6 接口能拿到完整 trackIds（旧接口只返回前 20 首且 trackIds 为空）
         Map<String, Object> d = getJson(
+                "https://music.163.com/api/v6/playlist/detail?id=" + playlistId, true);
+        Map<String, Object> pl = Json.asMap(d.get("playlist"));
+        List<Object> tracks = Json.asList(pl.get("tracks"));
+        List<Object> trackIds = Json.asList(pl.get("trackIds"));
+        if (!trackIds.isEmpty()) {
+            List<Long> ids = new ArrayList<>();
+            for (Object o : trackIds) {
+                long id = Json.lng(Json.asMap(o), "id", 0);
+                if (id > 0) ids.add(id);
+            }
+            if (ids.size() > tracks.size()) {
+                List<Song> full = fetchSongsByIds(ids);
+                if (!full.isEmpty()) return full;
+            }
+        }
+        if (!tracks.isEmpty()) {
+            List<Song> out = new ArrayList<>();
+            for (Object o : tracks) out.add(parseSong(o));
+            return out;
+        }
+        // 兜底：旧接口
+        Map<String, Object> legacy = getJson(
                 "https://music.163.com/api/playlist/detail?id=" + playlistId, true);
-        List<Object> tracks = Json.asList(Json.asMap(d.get("result")).get("tracks"));
+        List<Object> legacyTracks = Json.asList(Json.asMap(legacy.get("result")).get("tracks"));
         List<Song> out = new ArrayList<>();
-        for (Object o : tracks) out.add(parseSong(o));
+        for (Object o : legacyTracks) out.add(parseSong(o));
+        return out;
+    }
+
+    /** 按 trackIds 分批拉取完整曲目详情（每批 100 首），保持歌单顺序 */
+    private List<Song> fetchSongsByIds(List<Long> ids) throws IOException {
+        Map<Long, Song> byId = new HashMap<>();
+        int batchSize = 100;
+        for (int start = 0; start < ids.size(); start += batchSize) {
+            List<Long> batch = ids.subList(start, Math.min(start + batchSize, ids.size()));
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < batch.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(batch.get(i));
+            }
+            sb.append(']');
+            String url = "https://music.163.com/api/song/detail/?ids="
+                    + java.net.URLEncoder.encode(sb.toString(), "UTF-8");
+            Map<String, Object> d = getJson(url, true);
+            for (Object o : Json.asList(d.get("songs"))) {
+                Song song = parseSong(o);
+                if (song.id > 0) byId.put(song.id, song);
+            }
+        }
+        List<Song> out = new ArrayList<>();
+        for (Long id : ids) {
+            Song song = byId.get(id);
+            if (song != null) out.add(song);
+        }
         return out;
     }
 
@@ -734,11 +786,14 @@ public final class NeteaseClient {
         s.id = Json.lng(m, "id", 0);
         s.name = Json.str(m, "name", "");
         Map<String, Object> albumMap = Json.asMap(m.get("album"));
+        if (albumMap.isEmpty()) albumMap = Json.asMap(m.get("al"));
         s.album = Json.str(albumMap, "name", "");
         s.coverUrl = Json.str(albumMap, "picUrl", "");
         s.fee = Json.lng(m, "fee", 0);
-        s.duration = Json.lng(m, "duration", 0);
-        for (Object a : Json.asList(m.get("artists"))) {
+        s.duration = Json.lng(m, "duration", Json.lng(m, "dt", 0));
+        List<Object> artistList = Json.asList(m.get("artists"));
+        if (artistList.isEmpty()) artistList = Json.asList(m.get("ar"));
+        for (Object a : artistList) {
             String n = Json.str(Json.asMap(a), "name", "");
             if (!n.isEmpty()) s.artists.add(n);
         }
