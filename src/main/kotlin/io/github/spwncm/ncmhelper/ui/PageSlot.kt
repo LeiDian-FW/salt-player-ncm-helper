@@ -57,6 +57,7 @@ object PageSlot {
     /** 宿主当前页面 key；用于检测用户切换了其他侧边栏项时自动关闭本页面 */
     private val pageKey = java.util.concurrent.atomic.AtomicReference<Any?>(null)
     private var observedKey: Any? = null
+    private var lastLoggedVisible: Boolean? = null
 
     fun isInstalled(): Boolean = wrapper != null
 
@@ -98,7 +99,12 @@ object PageSlot {
 
             val wrapped: @Composable (Any) -> Unit = { key ->
                 observedKey = key
-                if (NeteaseNativeUi.pageVisible) {
+                val visibleNow = NeteaseNativeUi.pageVisible
+                if (lastLoggedVisible != visibleNow) {
+                    lastLoggedVisible = visibleNow
+                    Log.info("页面内容槽调用: pageVisible=" + visibleNow + ", key=" + key?.javaClass?.simpleName)
+                }
+                if (visibleNow) {
                     val expected = pageKey.get()
                     if (expected == null) {
                         pageKey.set(key)
@@ -110,7 +116,7 @@ object PageSlot {
                 } else if (pageKey.get() != null) {
                     pageKey.set(null)
                 }
-                if (NeteaseNativeUi.pageVisible) {
+                if (visibleNow) {
                     NeteaseEmbeddedPage()
                 } else {
                     fallback(key)
@@ -215,6 +221,9 @@ internal fun NeteaseSidebarRow() {
 /** 内嵌在主界面内容区的网易云页面：配色使用宿主 Material 主题 */
 @Composable
 internal fun NeteaseEmbeddedPage() {
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        NeteaseNativeUi.onEmbeddedRendered()
+    }
     val colors = MaterialTheme.colorScheme
     Box(
         Modifier

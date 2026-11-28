@@ -91,6 +91,9 @@ object NeteaseNativeUi {
     /** 侧边栏入口 + 内嵌页面是否可用（不再用独立弹窗） */
     internal var embedded by mutableStateOf(false)
     internal var pageVisible by mutableStateOf(false)
+    internal var dialogFallback by mutableStateOf(false)
+    private val embeddedRenderCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private val embeddedRenderSeen = java.util.concurrent.atomic.AtomicLong(0)
 
     internal var visible by mutableStateOf(false)
     internal var status by mutableStateOf("")
@@ -122,6 +125,7 @@ object NeteaseNativeUi {
     fun setVisible(value: Boolean) {
         visible = value
         pageVisible = value
+        dialogFallback = false
         dialogShown.set(false)
         if (value) {
             refreshStatus()
@@ -129,18 +133,35 @@ object NeteaseNativeUi {
         }
     }
 
-    /** 侧边栏点击：显示内嵌页面 */
+    /** 侧边栏点击：显示内嵌页面；若内嵌未真正渲染则自动用弹窗兜底 */
     internal fun openEmbedded() {
         Log.info("侧边栏: 打开网易云音乐页面")
         pageVisible = true
         visible = true
         refreshStatus()
         if (cards.isEmpty()) loadCards()
+        val before = embeddedRenderCount.get()
+        Thread {
+            try {
+                Thread.sleep(600)
+            } catch (_: InterruptedException) {
+            }
+            if (embeddedRenderCount.get() == before) {
+                Log.warn("内嵌页面未渲染，使用弹窗兜底显示")
+                dialogFallback = true
+            }
+        }.start()
+    }
+
+    internal fun onEmbeddedRendered() {
+        embeddedRenderCount.incrementAndGet()
+        Log.info("内嵌页面已组合渲染")
     }
 
     internal fun closePage() {
         pageVisible = false
         visible = false
+        dialogFallback = false
         releaseOverlay()
     }
 
@@ -552,13 +573,7 @@ private class SidebarHook : ComposableHook() {
             NeteaseSidebarRow()
             return
         }
-        // 兼容其他宿主版本：未找到 NewPlaylist 时，在 Settings（设置）之后保底渲染
-        if (!NeteaseNativeUi.newPlaylistSeen() && routeName == "Settings") {
-            if (NeteaseNativeUi.markSidebarTarget()) {
-                Log.info("侧边栏: 未找到 NewPlaylist，保底渲染在 Settings 之后")
-            }
-            NeteaseSidebarRow()
-        }
+        // 仅在新歌单下方渲染，避免重复入口
     }
 
     /** 从宿主 RouteItem 上读取显示文本（反射 String 字段） */
@@ -605,7 +620,7 @@ private class PanelHook : ComposableHook() {
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onHookHit()
         Box(Modifier.size(0.dp))
-        if (NeteaseNativeUi.visible && !NeteaseNativeUi.embedded && NeteaseNativeUi.claimDialog()) {
+        if (NeteaseNativeUi.visible && NeteaseNativeUi.dialogFallback && NeteaseNativeUi.claimDialog()) {
             NeteasePage()
         }
     }
