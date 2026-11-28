@@ -162,30 +162,20 @@ public final class NeteaseUiBridge {
         return url + sep + "param=" + size + "y" + size;
     }
 
-    /** 下载封面图片字节（按 260x260 缩略图拉取） */
+    /** 下载封面图片字节（取原图 JPEG，避免缩略图接口返回宿主无法解码的 WebP） */
     public static byte[] cover(String url) {
         NeteaseClient c = client;
         if (c == null || url == null || url.isEmpty()) return null;
         try {
-            return c.fetchBytes(withThumb(url, 260));
-        } catch (Exception e) {
-            try {
-                return c.fetchBytes(url);
-            } catch (Exception ignored) {
-                return null;
-            }
-        }
-    }
-
-    /** 下载头像字节（200x200 缩略图） */
-    public static byte[] avatarImage(String url) {
-        NeteaseClient c = client;
-        if (c == null || url == null || url.isEmpty()) return null;
-        try {
-            return c.fetchBytes(withThumb(url, 200));
+            return c.fetchBytes(url);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 下载头像字节 */
+    public static byte[] avatarImage(String url) {
+        return cover(url);
     }
 
     /** 账号歌单数量（阻塞，调用方需在后台线程） */

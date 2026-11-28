@@ -471,12 +471,16 @@ object NeteaseNativeUi {
     private fun decodeCover(url: String, cacheDir: String): ImageBitmap? {
         return try {
             val bytes = loadCoverBytes(url, cacheDir) ?: return null
+            // 使用 v1.7.6 已验证可用的解码路径
             javax.imageio.ImageIO.setUseCache(false)
-            val stream = javax.imageio.stream.MemoryCacheImageInputStream(ByteArrayInputStream(bytes))
-            val img = javax.imageio.ImageIO.read(stream)
-            stream.close()
-            img?.toComposeImageBitmap()
-        } catch (_: Throwable) {
+            val img = javax.imageio.ImageIO.read(ByteArrayInputStream(bytes))
+            if (img == null) {
+                Log.warn("封面解码失败: " + url.take(80) + " 字节=" + bytes.size)
+                return null
+            }
+            img.toComposeImageBitmap()
+        } catch (t: Throwable) {
+            Log.warn("封面解码异常: " + t)
             null
         }
     }
