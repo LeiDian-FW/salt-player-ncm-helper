@@ -235,11 +235,14 @@ public final class NeteaseClient {
         try {
             Map<String, Object> d = getJson("https://music.163.com/api/nuser/account/get", true);
             Map<String, Object> account = Json.asMap(d.get("account"));
-            Map<String, Object> profile = Json.asMap(account.get("profile"));
-            uid = Json.lng(account, "id", 0);
+            // 注意：实际返回的 profile 在顶层，不在 account 内
+            Map<String, Object> profile = Json.asMap(d.get("profile"));
+            if (profile.isEmpty()) profile = Json.asMap(account.get("profile"));
+            uid = Json.lng(account, "id", Json.lng(profile, "userId", 0));
             String nn = Json.str(profile, "nickname", "");
             if (!nn.isEmpty()) nickname = nn;
             String avatar = Json.str(profile, "avatarUrl", "");
+            if (avatar.isEmpty()) avatar = Json.str(profile, "avatarurl", "");
             if (!avatar.isEmpty()) avatarUrl = avatar;
             return uid != 0;
         } catch (Exception e) {
