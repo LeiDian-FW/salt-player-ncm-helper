@@ -5,6 +5,8 @@ package io.github.spwncm.ncmhelper.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -305,13 +307,17 @@ internal fun NeteaseEmbeddedPage() {
                 .fillMaxSize()
                 .padding(horizontal = 18.dp, vertical = 12.dp)
         ) {
-            EmbeddedHeader()
-            Spacer(Modifier.height(10.dp))
-            EmbeddedTabs()
-            Spacer(Modifier.height(14.dp))
-            EmbeddedGrid()
-            Spacer(Modifier.height(10.dp))
-            EmbeddedFooter()
+            if (NeteaseNativeUi.viewMode == "detail") {
+                EmbeddedPlaylistDetail(Modifier.weight(1f))
+            } else {
+                EmbeddedHeader()
+                Spacer(Modifier.height(10.dp))
+                EmbeddedTabs()
+                Spacer(Modifier.height(14.dp))
+                EmbeddedGrid()
+                Spacer(Modifier.height(10.dp))
+            }
+            if (NeteaseNativeUi.dlVisible) EmbeddedFooter()
         }
         if (NeteaseNativeUi.accountMenu) {
             AccountMenuOverlay()
@@ -462,6 +468,78 @@ private fun AccountAvatar() {
     }
 }
 
+/** 歌单详情：浏览曲目、勾选、下载选中（不限数量） */
+@Composable
+private fun EmbeddedPlaylistDetail(modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            ThemeAction("← 返回") { NeteaseNativeUi.closeDetail() }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                NeteaseNativeUi.detailTitle +
+                        (if (NeteaseNativeUi.detailTracks.isNotEmpty())
+                            "（" + NeteaseNativeUi.detailTracks.size + " 首）" else ""),
+                style = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                color = Color.White
+            )
+            Spacer(Modifier.weight(1f))
+            ThemeAction("全选") { NeteaseNativeUi.selectAllTracks() }
+            Spacer(Modifier.width(4.dp))
+            ThemeAction("清空") { NeteaseNativeUi.clearSelectedTracks() }
+            Spacer(Modifier.width(4.dp))
+            ThemeAction("下载选中（" + NeteaseNativeUi.selectedTracks.size + "）") {
+                NeteaseNativeUi.downloadSelected()
+            }
+        }
+        if (NeteaseNativeUi.message.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(NeteaseNativeUi.message, style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                color = Color.White.copy(alpha = 0.8f))
+        }
+        Spacer(Modifier.height(8.dp))
+        if (NeteaseNativeUi.loadingDetail) {
+            Text("正在加载曲目…", style = LocalTextStyle.current.copy(fontSize = 13.sp),
+                color = Color.White.copy(alpha = 0.7f))
+            return@Column
+        }
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+            items(NeteaseNativeUi.detailTracks.size) { index ->
+                val track = NeteaseNativeUi.detailTracks[index]
+                val checked = NeteaseNativeUi.selectedTracks.contains(index)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { NeteaseNativeUi.toggleTrack(index) }
+                        .padding(vertical = 5.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(16.dp).clip(RoundedCornerShape(3.dp))
+                            .background(if (checked) Color.White else Color.White.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (checked) Text("✓", style = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            color = Color(0xFF1D1D1D))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text((index + 1).toString().padStart(2, ' '),
+                        style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.6f))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        track.name + (if (track.artistText().isEmpty()) "" else " - " + track.artistText()),
+                        style = LocalTextStyle.current.copy(fontSize = 13.sp),
+                        color = Color.White, maxLines = 1, modifier = Modifier.weight(1f)
+                    )
+                    Text(formatDuration(track.duration),
+                        style = LocalTextStyle.current.copy(fontSize = 11.sp),
+                        color = Color.White.copy(alpha = 0.6f))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun EmbeddedTabs() {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -581,7 +659,7 @@ private fun EmbeddedFooter() {
                 Text(NeteaseNativeUi.dlStats, style = LocalTextStyle.current.copy(fontSize = 11.sp),
                     color = Color.White.copy(alpha = 0.7f))
                 Spacer(Modifier.width(10.dp))
-                if (NeteaseNativeUi.dlActive) ThemeAction("取消下载") { NeteaseUiBridge.downloadCancel() }
+                if (NeteaseNativeUi.dlActive) ThemeAction("取消下载") { NeteaseNativeUi.cancelDownload() }
             }
         } else if (NeteaseNativeUi.message.isNotEmpty()) {
             Text(NeteaseNativeUi.message, style = LocalTextStyle.current.copy(fontSize = 12.sp),

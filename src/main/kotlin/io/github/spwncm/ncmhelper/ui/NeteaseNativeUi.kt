@@ -110,6 +110,15 @@ object NeteaseNativeUi {
     internal var loadToken by mutableStateOf(0)
 
     internal var dlActive by mutableStateOf(false)
+    internal var dlVisible by mutableStateOf(false)
+
+    // 歌单详情（浏览曲目 + 勾选下载）
+    internal var viewMode by mutableStateOf("discover") // discover / detail
+    internal var detailId by mutableStateOf(0L)
+    internal var detailTitle by mutableStateOf("")
+    internal var detailTracks by mutableStateOf<List<NeteaseClient.Song>>(emptyList())
+    internal var selectedTracks by mutableStateOf<Set<Int>>(emptySet())
+    internal var loadingDetail by mutableStateOf(false)
     internal var dlFraction by mutableStateOf(0f)
     internal var dlText by mutableStateOf("")
     internal var dlStats by mutableStateOf("")
@@ -494,11 +503,16 @@ object NeteaseNativeUi {
 
     internal fun openCard(card: NeteaseClient.Card) {
         Log.info("原生面板: 点击卡片 " + card.kind + " " + card.title)
+        if (card.kind == "playlist") {
+            openPlaylistDetail(card.id, card.title)
+            return
+        }
         if (!NeteaseUiBridge.loggedIn()) {
             message = "请先登录网易云（从剪贴板登录）"
             return
         }
         dlActive = true
+        dlVisible = true
         dlFraction = 0f
         dlText = "准备下载: " + card.title
         dlStats = ""
@@ -515,10 +529,111 @@ object NeteaseNativeUi {
                     dlFraction = 1f
                     dlText = summary
                     dlActive = false
+                    hideProgressSoon()
                 }
                 override fun error(message: String) {
-                    dlText = "下载失败: " + message
+                    dlText = if (message == "已取消") "已取消下载" else "下载失败: " + message
                     dlActive = false
+                    hideProgressSoon()
+                }
+            })
+    }
+
+    /** 完成后/取消后 1.5 秒自动关闭进度条 */
+    internal fun hideProgressSoon() {
+        Thread {
+            try {
+                Thread.sleep(1500)
+            } catch (_: InterruptedException) {
+            }
+            dlVisible = false
+            dlText = ""
+            dlStats = ""
+            dlFraction = 0f
+        }.start()
+    }
+
+    internal fun cancelDownload() {
+        Log.info("原生面板: 取消下载")
+        NeteaseUiBridge.downloadCancel()
+        dlText = "正在取消…"
+    }
+
+    /** 打开歌单详情并加载曲目 */
+    internal fun openPlaylistDetail(playlistId: Long, title: String) {
+        detailId = playlistId
+        detailTitle = title
+        detailTracks = emptyList()
+        selectedTracks = emptySet()
+        loadingDetail = true
+        viewMode = "detail"
+        message = ""
+        Thread {
+            try {
+                detailTracks = NeteaseUiBridge.playlistTracks(playlistId)
+                Log.info("歌单详情: " + title + " 共 " + detailTracks.size + " 首")
+            } catch (t: Throwable) {
+                message = "加载歌单失败: " + t.message
+            } finally {
+                loadingDetail = false
+            }
+        }.start()
+    }
+
+    internal fun closeDetail() {
+        viewMode = "discover"
+        detailTracks = emptyList()
+        selectedTracks = emptySet()
+    }
+
+    internal fun toggleTrack(index: Int) {
+        selectedTracks = if (selectedTracks.contains(index)) selectedTracks - index else selectedTracks + index
+    }
+
+    internal fun selectAllTracks() {
+        selectedTracks = detailTracks.indices.toSet()
+    }
+
+    internal fun clearSelectedTracks() {
+        selectedTracks = emptySet()
+    }
+
+    /** 下载勾选的曲目（不限数量） */
+    internal fun downloadSelected() {
+        if (selectedTracks.isEmpty()) {
+            message = "请先勾选曲目"
+            return
+        }
+        if (!NeteaseUiBridge.loggedIn()) {
+            message = "请先登录网易云（从剪贴板登录）"
+            return
+        }
+        dlActive = true
+        dlVisible = true
+        dlFraction = 0f
+        dlText = "准备下载 " + selectedTracks.size + " 首…"
+        dlStats = ""
+        message = ""
+        val indices = selectedTracks.sorted().toIntArray()
+        NeteaseUiBridge.downloadPicked(detailId, indices,
+            object : NeteaseUiBridge.ProgressSink {
+                override fun status(text: String) { dlText = text }
+                override fun song(index: Int, total: Int, name: String, artist: String) {
+                    dlText = "(" + index + "/" + total + ") " + name +
+                            (if (artist.isEmpty()) "" else " - " + artist)
+                }
+                override fun progress(fraction: Float) { dlFraction = fraction }
+                override fun stats(text: String) { dlStats = text }
+                override fun done(summary: String) {
+                    dlFraction = 1f
+                    dlText = summary
+                    dlActive = false
+                    hideProgressSoon()
+                }
+                override fun error(message: String) {
+                    dlText = if (message == "已取消") "已取消下载" else "下载失败: " + message
+                    dlActive = false
+                    hideProgressSoon()
                 }
             })
     }

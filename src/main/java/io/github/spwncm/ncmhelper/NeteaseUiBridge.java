@@ -224,6 +224,42 @@ public final class NeteaseUiBridge {
         t.start();
     }
 
+    /** 歌单曲目列表（阻塞，调用方需在后台线程） */
+    public static java.util.List<NeteaseClient.Song> playlistTracks(long playlistId) throws Exception {
+        NeteaseClient c = client;
+        if (c == null) throw new IllegalStateException("插件未就绪");
+        return c.playlist(playlistId);
+    }
+
+    /** 下载歌单中用户勾选的曲目（异步，不限数量） */
+    public static void downloadPicked(long playlistId, int[] indices, ProgressSink sink) {
+        downloadCancelled = false;
+        Thread t = new Thread(() -> {
+            try {
+                MainPlugin p = MainPlugin.instance();
+                if (p == null) throw new IllegalStateException("插件未就绪");
+                java.util.List<NeteaseClient.Song> all = playlistTracks(playlistId);
+                java.util.List<NeteaseClient.Song> picked = new java.util.ArrayList<>();
+                for (int index : indices) {
+                    if (index >= 0 && index < all.size()) picked.add(all.get(index));
+                }
+                if (picked.isEmpty()) {
+                    sink.error("没有勾选曲目");
+                    return;
+                }
+                NeteaseDownloader dl = new NeteaseDownloader(client,
+                        java.nio.file.Paths.get(p.neteaseLibraryPath()), p.historyRef());
+                dl.download(picked, picked.size(), true, new NativeDownloadListener(sink));
+            } catch (NeteaseClient.DownloadCancelled e) {
+                sink.error("已取消");
+            } catch (Throwable e) {
+                sink.error(String.valueOf(e));
+            }
+        }, "netease-picked-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
     /** 下载列表中的歌曲（异步），kind: search / playlist / likes */
     public static void downloadAsync(String kind, String argument, int limit, ProgressSink sink) {
         downloadCancelled = false;
