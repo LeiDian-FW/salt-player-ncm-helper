@@ -475,13 +475,34 @@ private fun EmbeddedPlaylistDetail(modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             ThemeAction("← 返回") { NeteaseNativeUi.closeDetail() }
             Spacer(Modifier.width(10.dp))
-            Text(
-                NeteaseNativeUi.detailTitle +
-                        (if (NeteaseNativeUi.detailTracks.isNotEmpty())
-                            "（" + NeteaseNativeUi.detailTracks.size + " 首）" else ""),
-                style = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
-                color = Color.White
-            )
+            // 歌单封面
+            Box(
+                Modifier.size(84.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                val cover = NeteaseNativeUi.covers[NeteaseNativeUi.detailCoverUrl]
+                if (cover != null) {
+                    Image(bitmap = cover, contentDescription = "歌单封面",
+                        modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Text("♪", color = Color.White.copy(alpha = 0.5f))
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    NeteaseNativeUi.detailTitle,
+                    style = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                    color = Color.White
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    (if (NeteaseNativeUi.detailTracks.isNotEmpty())
+                        NeteaseNativeUi.detailTracks.size.toString() + " 首" else "加载中…"),
+                    style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
             Spacer(Modifier.weight(1f))
             ThemeAction("全选") { NeteaseNativeUi.selectAllTracks() }
             Spacer(Modifier.width(4.dp))
@@ -520,6 +541,22 @@ private fun EmbeddedPlaylistDetail(modifier: Modifier = Modifier) {
                     ) {
                         if (checked) Text("✓", style = LocalTextStyle.current.copy(fontSize = 11.sp),
                             color = Color(0xFF1D1D1D))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    // 专辑封面
+                    Box(
+                        Modifier.size(34.dp).clip(RoundedCornerShape(6.dp))
+                            .background(Color.White.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val trackCover = NeteaseNativeUi.covers[track.coverUrl]
+                        if (trackCover != null) {
+                            Image(bitmap = trackCover, contentDescription = null,
+                                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Text("♪", style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                                color = Color.White.copy(alpha = 0.5f))
+                        }
                     }
                     Spacer(Modifier.width(10.dp))
                     Text((index + 1).toString().padStart(2, ' '),

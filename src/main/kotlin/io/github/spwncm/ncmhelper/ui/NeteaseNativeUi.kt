@@ -116,6 +116,7 @@ object NeteaseNativeUi {
     internal var viewMode by mutableStateOf("discover") // discover / detail
     internal var detailId by mutableStateOf(0L)
     internal var detailTitle by mutableStateOf("")
+    internal var detailCoverUrl by mutableStateOf("")
     internal var detailTracks by mutableStateOf<List<NeteaseClient.Song>>(emptyList())
     internal var selectedTracks by mutableStateOf<Set<Int>>(emptySet())
     internal var loadingDetail by mutableStateOf(false)
@@ -481,6 +482,45 @@ object NeteaseNativeUi {
         }.start()
     }
 
+    /** 并行加载一组歌曲的专辑封面 */
+    internal fun loadTrackCovers(tracks: List<NeteaseClient.Song>) {
+        val pending = tracks.map { it.coverUrl }
+            .filter { it.isNotEmpty() && !covers.containsKey(it) }
+            .distinct()
+        if (pending.isEmpty()) return
+        Thread {
+            try {
+                val cacheDir = NeteaseUiBridge.cacheDir()
+                val map = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap>()
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
+                val latch = java.util.concurrent.CountDownLatch(pending.size)
+                for (url in pending) {
+                    pool.execute {
+                        try {
+                            val bytes = loadCoverBytes(url, cacheDir) ?: return@execute
+                            javax.imageio.ImageIO.setUseCache(false)
+                            val stream = javax.imageio.stream.MemoryCacheImageInputStream(
+                                ByteArrayInputStream(bytes))
+                            val img = javax.imageio.ImageIO.read(stream)
+                            stream.close()
+                            if (img != null) map[url] = img.toComposeImageBitmap()
+                        } catch (_: Throwable) {
+                        } finally {
+                            latch.countDown()
+                        }
+                    }
+                }
+                latch.await(20, java.util.concurrent.TimeUnit.SECONDS)
+                pool.shutdownNow()
+                if (map.isNotEmpty()) {
+                    covers = covers + map
+                    Log.info("曲目封面加载 " + map.size + " 张")
+                }
+            } catch (_: Throwable) {
+            }
+        }.start()
+    }
+
     private fun loadCoverBytes(url: String, cacheDir: String): ByteArray? {
         try {
             if (cacheDir.isNotEmpty()) {
@@ -504,7 +544,7 @@ object NeteaseNativeUi {
     internal fun openCard(card: NeteaseClient.Card) {
         Log.info("原生面板: 点击卡片 " + card.kind + " " + card.title)
         if (card.kind == "playlist") {
-            openPlaylistDetail(card.id, card.title)
+            openPlaylistDetail(card.id, card.title, card.coverUrl)
             return
         }
         if (!NeteaseUiBridge.loggedIn()) {
@@ -560,9 +600,10 @@ object NeteaseNativeUi {
     }
 
     /** 打开歌单详情并加载曲目 */
-    internal fun openPlaylistDetail(playlistId: Long, title: String) {
+    internal fun openPlaylistDetail(playlistId: Long, title: String, coverUrl: String = "") {
         detailId = playlistId
         detailTitle = title
+        detailCoverUrl = coverUrl
         detailTracks = emptyList()
         selectedTracks = emptySet()
         loadingDetail = true
@@ -572,6 +613,7 @@ object NeteaseNativeUi {
             try {
                 detailTracks = NeteaseUiBridge.playlistTracks(playlistId)
                 Log.info("歌单详情: " + title + " 共 " + detailTracks.size + " 首")
+                loadTrackCovers(detailTracks)
             } catch (t: Throwable) {
                 message = "加载歌单失败: " + t.message
             } finally {
