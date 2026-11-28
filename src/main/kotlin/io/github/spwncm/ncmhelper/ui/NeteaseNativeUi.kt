@@ -207,6 +207,7 @@ object NeteaseNativeUi {
             try {
                 cards = NeteaseUiBridge.discovery(tab)
                 Log.info("原生面板: 加载 " + tab + " 成功，共 " + cards.size + " 项")
+                loadCovers()
             } catch (t: Throwable) {
                 message = "加载失败: " + t.message
                 Log.warn("原生面板: 加载 " + tab + " 失败: " + t)
@@ -216,22 +217,55 @@ object NeteaseNativeUi {
         }.start()
     }
 
+    private val coversLoading = java.util.concurrent.atomic.AtomicBoolean(false)
+
     internal fun loadCovers() {
         val list = cards
         if (list.isEmpty()) return
+        if (!coversLoading.compareAndSet(false, true)) return
         Thread {
-            val map = HashMap<String, ImageBitmap>()
-            for (card in list) {
-                if (card.coverUrl.isEmpty() || covers.containsKey(card.coverUrl)) continue
-                try {
-                    val bytes = NeteaseUiBridge.cover(card.coverUrl) ?: continue
-                    val img = ImageIO.read(ByteArrayInputStream(bytes)) ?: continue
-                    map[card.coverUrl] = img.toComposeImageBitmap()
-                } catch (_: Throwable) {
+            try {
+                val map = HashMap<String, ImageBitmap>()
+                val cacheDir = NeteaseUiBridge.cacheDir()
+                for (card in list) {
+                    if (card.coverUrl.isEmpty() || covers.containsKey(card.coverUrl)) continue
+                    try {
+                        val bytes = loadCoverBytes(card.coverUrl, cacheDir) ?: continue
+                        // 关闭 ImageIO 磁盘缓存：受限环境下无法创建临时文件
+                        ImageIO.setUseCache(false)
+                        val img = ImageIO.read(ByteArrayInputStream(bytes)) ?: continue
+                        map[card.coverUrl] = img.toComposeImageBitmap()
+                    } catch (_: Throwable) {
+                    }
                 }
+                if (map.isNotEmpty()) {
+                    covers = covers + map
+                    Log.info("原生面板: 封面加载 " + map.size + " 张")
+                }
+            } finally {
+                coversLoading.set(false)
             }
-            if (map.isNotEmpty()) covers = covers + map
         }.start()
+    }
+
+    private fun loadCoverBytes(url: String, cacheDir: String): ByteArray? {
+        try {
+            if (cacheDir.isNotEmpty()) {
+                val name = java.security.MessageDigest.getInstance("SHA-1")
+                    .digest(url.toByteArray()).joinToString("") { "%02x".format(it) } + ".img"
+                val f = java.io.File(cacheDir, name)
+                if (f.isFile && f.length() > 0) return f.readBytes()
+                val bytes = NeteaseUiBridge.cover(url)
+                if (bytes != null && bytes.isNotEmpty()) {
+                    runCatching { f.writeBytes(bytes) }
+                    return bytes
+                }
+                return null
+            }
+            return NeteaseUiBridge.cover(url)
+        } catch (_: Throwable) {
+            return null
+        }
     }
 
     internal fun openCard(card: NeteaseClient.Card) {
@@ -338,14 +372,31 @@ object NeteaseNativeUi {
 
     private fun demoSongs(): List<NeteaseClient.Card> = demoCards()
 
+    private var demoCoverSeq = 0
+
     private fun demoCard(title: String, artist: String, duration: Long, kind: String): NeteaseClient.Card {
         val c = NeteaseClient.Card()
+        demoCoverSeq++
+        c.coverUrl = "demo" + demoCoverSeq
         c.id = title.hashCode().toLong()
         c.title = title
         c.subtitle = artist
         c.duration = duration
         c.kind = kind
         return c
+    }
+
+    /** 离屏渲染测试用：注入一张本地封面图 */
+    @JvmStatic
+    fun injectCoverForTest(url: String, filePath: String): Boolean {
+        return try {
+            ImageIO.setUseCache(false)
+            val img = ImageIO.read(java.io.File(filePath)) ?: return false
+            covers = covers + (url to img.toComposeImageBitmap())
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     /** 离屏渲染：把发现页渲染成 PNG（无主机环境验证 UI） */

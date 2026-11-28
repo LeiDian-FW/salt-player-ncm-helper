@@ -125,6 +125,18 @@ public final class NeteaseUiBridge {
         };
     }
 
+    /** 封面缓存目录（插件数据目录下 covers/） */
+    public static String cacheDir() {
+        MainPlugin p = MainPlugin.instance();
+        if (p == null) return "";
+        java.nio.file.Path dir = p.dataDirRef().resolve("covers");
+        try {
+            java.nio.file.Files.createDirectories(dir);
+        } catch (Exception ignored) {
+        }
+        return dir.toString();
+    }
+
     /** 下载封面图片字节 */
     public static byte[] cover(String url) {
         NeteaseClient c = client;
