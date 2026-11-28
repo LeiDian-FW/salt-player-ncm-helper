@@ -299,18 +299,96 @@ internal fun NeteaseEmbeddedPage() {
         NeteaseNativeUi.loadAvatar()
     }
     // 不绘制自己的背景：直接使用宿主页面背景
-    Column(
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 12.dp)
+        ) {
+            EmbeddedHeader()
+            Spacer(Modifier.height(10.dp))
+            EmbeddedTabs()
+            Spacer(Modifier.height(14.dp))
+            EmbeddedGrid()
+            Spacer(Modifier.height(10.dp))
+            EmbeddedFooter()
+        }
+        if (NeteaseNativeUi.accountMenu) {
+            AccountMenuOverlay()
+        }
+    }
+}
+
+/** 账号信息弹层：头像、昵称、uid、退出登录 */
+@Composable
+private fun AccountMenuOverlay() {
+    Box(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .background(Color.Black.copy(alpha = 0.35f))
+            .clickable { NeteaseNativeUi.accountMenu = false },
+        contentAlignment = Alignment.TopEnd
     ) {
-        EmbeddedHeader()
-        Spacer(Modifier.height(10.dp))
-        EmbeddedTabs()
-        Spacer(Modifier.height(14.dp))
-        EmbeddedGrid()
-        Spacer(Modifier.height(10.dp))
-        EmbeddedFooter()
+        Column(
+            Modifier
+                .padding(top = 54.dp, end = 18.dp)
+                .width(280.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF1E1E1E).copy(alpha = 0.96f))
+                .clickable(enabled = false) {}
+                .padding(18.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val bitmap = NeteaseNativeUi.avatar
+                Box(
+                    Modifier.size(52.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (bitmap != null) {
+                        Image(bitmap = bitmap, contentDescription = "账号头像",
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        Text("♪", color = Color.White.copy(alpha = 0.8f))
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        NeteaseUiBridge.nickname().ifEmpty { "未登录" },
+                        style = LocalTextStyle.current.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                        color = Color.White
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "uid: " + NeteaseUiBridge.uid(),
+                        style = LocalTextStyle.current.copy(fontSize = 12.sp),
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            MenuAction("退出登录", danger = true) { NeteaseNativeUi.logoutAccount() }
+            Spacer(Modifier.height(8.dp))
+            MenuAction("关闭") { NeteaseNativeUi.accountMenu = false }
+        }
+    }
+}
+
+@Composable
+private fun MenuAction(text: String, danger: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (danger) Color(0xFFE05B5B).copy(alpha = 0.22f) else Color.White.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
+    ) {
+        Text(
+            text,
+            style = LocalTextStyle.current.copy(fontSize = 13.sp),
+            color = if (danger) Color(0xFFFF8A8A) else Color.White
+        )
     }
 }
 
@@ -362,7 +440,8 @@ private fun AccountAvatar() {
         Modifier
             .size(30.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.18f)),
+            .background(Color.White.copy(alpha = 0.18f))
+            .clickable { NeteaseNativeUi.accountMenu = !NeteaseNativeUi.accountMenu },
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {

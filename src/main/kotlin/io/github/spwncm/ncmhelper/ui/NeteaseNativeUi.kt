@@ -104,6 +104,7 @@ object NeteaseNativeUi {
     internal var loading by mutableStateOf(false)
     internal var searchText by mutableStateOf("")
     internal var avatar by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    internal var accountMenu by mutableStateOf(false)
     internal var avatarToken by mutableStateOf(0)
     internal var loadToken by mutableStateOf(0)
 
@@ -347,8 +348,21 @@ object NeteaseNativeUi {
         avatarToken++
     }
 
+    /** 退出登录并刷新界面 */
+    internal fun logoutAccount() {
+        Log.info("账号菜单: 退出登录")
+        NeteaseUiBridge.logout()
+        accountMenu = false
+        refreshStatus()
+        loadAvatar()
+    }
+
     /** 加载账号头像（后台线程，内存解码） */
     internal fun loadAvatar() {
+        // 启动后首次打开页面时补拉一次账号资料（昵称/头像/uid）
+        if (NeteaseUiBridge.loggedIn() && NeteaseUiBridge.uid() == 0L) {
+            NeteaseUiBridge.refreshProfile()
+        }
         val url = NeteaseUiBridge.avatarUrl()
         if (url.isEmpty()) {
             avatar = null

@@ -265,6 +265,24 @@ public final class NeteaseUiBridge {
         return nick.isEmpty() ? "已登录" : "已登录：" + nick;
     }
 
+    /** 刷新账号资料（昵称/头像/uid） */
+    public static void refreshProfile() {
+        NeteaseClient c = client;
+        if (c != null && c.isLoggedIn()) c.refreshProfile();
+    }
+
+    /** 账号 uid（未登录为 0） */
+    public static long uid() {
+        NeteaseClient c = client;
+        return c == null ? 0L : c.uid();
+    }
+
+    /** 退出登录（清除本地 Cookie） */
+    public static void logout() {
+        NeteaseClient c = client;
+        if (c != null) c.logout();
+    }
+
     /** 已登录账号头像 URL（未登录或未获取到为空串） */
     public static String avatarUrl() {
         NeteaseClient c = client;
