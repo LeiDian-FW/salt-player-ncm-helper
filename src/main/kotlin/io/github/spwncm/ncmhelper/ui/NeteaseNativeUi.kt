@@ -77,9 +77,19 @@ private val TABS = listOf(
 object NeteaseNativeUi {
 
     private var hookHandle: HookHandle? = null
+    private var sidebarHandle: HookHandle? = null
+    private var overlayHandle: HookHandle? = null
     private val hookHits = java.util.concurrent.atomic.AtomicInteger(0)
     private val dialogShown = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val sidebarRowShown = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val overlayClaimed = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val sidebarHits = java.util.concurrent.atomic.AtomicInteger(0)
+    private val overlayHits = java.util.concurrent.atomic.AtomicInteger(0)
     private var candidateIndex = 0
+
+    /** 侧边栏入口 + 内嵌页面是否可用（不再用独立弹窗） */
+    internal var embedded by mutableStateOf(false)
+    internal var pageVisible by mutableStateOf(false)
 
     internal var visible by mutableStateOf(false)
     internal var status by mutableStateOf("")
@@ -110,11 +120,27 @@ object NeteaseNativeUi {
     @JvmStatic
     fun setVisible(value: Boolean) {
         visible = value
+        pageVisible = value
         dialogShown.set(false)
         if (value) {
             refreshStatus()
             if (cards.isEmpty()) loadCards()
         }
+    }
+
+    /** 侧边栏点击：显示内嵌页面 */
+    internal fun openEmbedded() {
+        Log.info("侧边栏: 打开网易云音乐页面")
+        pageVisible = true
+        visible = true
+        refreshStatus()
+        if (cards.isEmpty()) loadCards()
+    }
+
+    internal fun closePage() {
+        pageVisible = false
+        visible = false
+        releaseOverlay()
     }
 
     @JvmStatic
@@ -130,6 +156,7 @@ object NeteaseNativeUi {
                 hookHits.set(0)
                 candidateIndex = index
                 Log.info("原生界面已安装（候选 ${index + 1}/${hookTargets.size}：${target.owner}#${target.name}）")
+                installEmbedded()
                 refreshStatus()
                 return true
             } catch (t: Throwable) {
@@ -139,6 +166,59 @@ object NeteaseNativeUi {
         Log.warn("原生界面所有候选注入点均失败，将回退 Swing 面板")
         return false
     }
+
+    /** 安装侧边栏入口与主界面内嵌覆盖层 */
+    private fun installEmbedded() {
+        if (sidebarHandle == null) {
+            try {
+                sidebarHandle = WorkshopApi.hookRegistrar.afterComposable(
+                    "androidx.compose.ui.\u0b1a", "\u037f",
+                    "androidx.compose.ui.\u0b1a$\u052e",
+                    listOf("androidx.compose.ui.\u063a$\u052a"), 60, SidebarHook())
+                sidebarRowShown.set(false)
+                Log.info("侧边栏入口 Hook 已安装")
+            } catch (t: Throwable) {
+                Log.warn("侧边栏入口 Hook 安装失败: $t")
+            }
+        }
+        if (overlayHandle == null) {
+            try {
+                overlayHandle = WorkshopApi.hookRegistrar.afterComposable(
+                    "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", "Content",
+                    "com.xuncorp.voxzen.ui.navigation.AppNavigationKt", emptyList(), 60, OverlayHook())
+                embedded = true
+                Log.info("内嵌页面 Hook 已安装（主界面覆盖层）")
+            } catch (t: Throwable) {
+                embedded = false
+                Log.warn("内嵌页面 Hook 安装失败（将回退独立弹窗）: $t")
+            }
+        }
+    }
+
+    internal fun onSidebarHit() {
+        sidebarHits.incrementAndGet()
+    }
+
+    internal fun onOverlayHit() {
+        overlayHits.incrementAndGet()
+    }
+
+    internal fun claimSidebarRow(): Boolean = sidebarRowShown.compareAndSet(false, true)
+
+    internal fun claimOverlay(): Boolean = overlayClaimed.compareAndSet(false, true)
+
+    internal fun releaseOverlay() {
+        overlayClaimed.set(false)
+    }
+
+    @JvmStatic
+    fun sidebarHitCount(): Int = sidebarHits.get()
+
+    @JvmStatic
+    fun overlayHitCount(): Int = overlayHits.get()
+
+    @JvmStatic
+    fun isEmbedded(): Boolean = embedded
 
     @JvmStatic
     fun retryNextCandidate(): Boolean {
@@ -162,12 +242,18 @@ object NeteaseNativeUi {
 
     @JvmStatic
     fun uninstall() {
-        try {
-            hookHandle?.unhook()
-        } catch (_: Throwable) {
+        for (h in listOf(hookHandle, sidebarHandle, overlayHandle)) {
+            try {
+                h?.unhook()
+            } catch (_: Throwable) {
+            }
         }
         hookHandle = null
+        sidebarHandle = null
+        overlayHandle = null
+        embedded = false
         visible = false
+        pageVisible = false
     }
 
     internal fun onHookHit() {
@@ -327,6 +413,8 @@ object NeteaseNativeUi {
             "discovery" -> {
                 tab = "playlist"
                 status = "已登录：源谷绘"
+                pageVisible = true
+                embedded = true
                 cards = demoCards()
             }
             "search" -> {
@@ -445,12 +533,53 @@ object NeteaseNativeUi {
     )
 }
 
+/** 侧边栏入口：在宿主侧边栏渲染「网易云音乐」一行 */
+private class SidebarHook : ComposableHook() {
+    @Composable
+    override fun Content(call: UiHookCall) {
+        NeteaseNativeUi.onSidebarHit()
+        if (!NeteaseNativeUi.claimSidebarRow()) return
+        androidx.compose.foundation.layout.Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { NeteaseNativeUi.openEmbedded() }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 不指定颜色，继承宿主主题内容色
+            BasicText("♪", style = TextStyle(fontSize = 16.sp))
+            Spacer(Modifier.width(10.dp))
+            BasicText("网易云音乐", style = TextStyle(fontSize = 14.sp))
+        }
+    }
+}
+
+/** 主界面内嵌覆盖层：覆盖在宿主导航内容之上显示网易云页面 */
+private class OverlayHook : ComposableHook() {
+    @Composable
+    override fun Content(call: UiHookCall) {
+        NeteaseNativeUi.onOverlayHit()
+        if (!NeteaseNativeUi.pageVisible) return
+        if (!NeteaseNativeUi.claimOverlay()) return
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            Log.info("原生面板已显示（内嵌主界面）")
+            onDispose {
+                NeteaseNativeUi.releaseOverlay()
+                Log.info("原生面板已关闭（内嵌主界面）")
+            }
+        }
+        Box(Modifier.fillMaxSize().background(PAGE_BG)) {
+            NeteasePageContent()
+        }
+    }
+}
+
 private class PanelHook : ComposableHook() {
     @Composable
     override fun Content(call: UiHookCall) {
         NeteaseNativeUi.onHookHit()
         Box(Modifier.size(0.dp))
-        if (NeteaseNativeUi.visible && NeteaseNativeUi.claimDialog()) {
+        if (NeteaseNativeUi.visible && !NeteaseNativeUi.embedded && NeteaseNativeUi.claimDialog()) {
             NeteasePage()
         }
     }
@@ -513,7 +642,7 @@ private fun Header() {
         Spacer(Modifier.width(8.dp))
         PageButton("刷新") { NeteaseNativeUi.loadCards() }
         Spacer(Modifier.width(8.dp))
-        PageButton("关闭") { NeteaseNativeUi.visible = false }
+        PageButton("关闭") { NeteaseNativeUi.closePage() }
     }
 }
 

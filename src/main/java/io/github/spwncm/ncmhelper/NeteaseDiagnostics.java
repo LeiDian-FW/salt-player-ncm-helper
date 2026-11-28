@@ -49,6 +49,9 @@ public final class NeteaseDiagnostics {
         report.append("原生界面已安装: ").append(NeteaseUiBridge.nativeAvailable()).append('\n');
         report.append("原生 Hook 调用次数: ").append(NeteaseUiBridge.hookHits()).append('\n');
         report.append("当前注入点: ").append(NeteaseUiBridge.currentTarget()).append('\n');
+        report.append("内嵌页面可用: ").append(NeteaseUiBridge.embedded()).append('\n');
+        report.append("侧边栏 Hook 命中: ").append(NeteaseUiBridge.sidebarHits()).append('\n');
+        report.append("覆盖层 Hook 命中: ").append(NeteaseUiBridge.overlayHits()).append('\n');
         report.append("网易云已登录: ").append(NeteaseUiBridge.loggedIn()).append('\n');
         report.append("音乐库目录: ").append(NeteaseUiBridge.libraryPath()).append('\n');
         report.append("每次最多下载: ").append(NeteaseUiBridge.downloadLimit())

@@ -640,9 +640,14 @@ public class MainPlugin extends SpwPlugin {
         boolean installed = NeteaseUiBridge.nativeAvailable();
         int hits = NeteaseUiBridge.hookHits();
         String target = NeteaseUiBridge.currentTarget();
-        Log.info("原生界面状态: installed=" + installed + ", hits=" + hits + ", target=" + target);
+        Log.info("原生界面状态: installed=" + installed + ", hits=" + hits + ", target=" + target
+                + ", embedded=" + NeteaseUiBridge.embedded()
+                + ", sidebarHits=" + NeteaseUiBridge.sidebarHits()
+                + ", overlayHits=" + NeteaseUiBridge.overlayHits());
         toast("原生界面: " + (installed ? "已安装" : "未安装")
-                + " | Hook调用=" + hits + " | " + target);
+                + " | 主Hook=" + hits
+                + " | 侧栏=" + NeteaseUiBridge.sidebarHits()
+                + " | 覆盖层=" + NeteaseUiBridge.overlayHits());
     }
 
     /** 配置页「导出诊断信息」按钮入口 */

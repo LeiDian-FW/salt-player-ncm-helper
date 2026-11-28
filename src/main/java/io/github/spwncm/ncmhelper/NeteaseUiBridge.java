@@ -53,6 +53,23 @@ public final class NeteaseUiBridge {
         return v instanceof Integer i ? i : 0;
     }
 
+    /** 侧边栏入口是否已内嵌可用 */
+    public static boolean embedded() {
+        return Boolean.TRUE.equals(invokeStatic("isEmbedded", new Class<?>[0]));
+    }
+
+    /** 侧边栏 Hook 命中次数 */
+    public static int sidebarHits() {
+        Object v = invokeStatic("sidebarHitCount", new Class<?>[0]);
+        return v instanceof Integer i ? i : 0;
+    }
+
+    /** 内嵌覆盖层 Hook 命中次数 */
+    public static int overlayHits() {
+        Object v = invokeStatic("overlayHitCount", new Class<?>[0]);
+        return v instanceof Integer i ? i : 0;
+    }
+
     /** 面板显隐状态 */
     public static boolean panelVisible() {
         Object v = invokeStatic("isVisible", new Class<?>[0]);
