@@ -41,6 +41,98 @@ import java.lang.reflect.Method
  * 打开网易云页面时渲染我们的页面，否则调用原内容——因此页面显示在主界面内容区，
  * 和宿主的其他页面一致（不是独立窗口）。
  */
+/** 本插件在宿主导航中的页面路由（ScreenRoute.ModConfigContent），全部通过反射访问宿主类 */
+object NeteaseRoute {
+    internal const val PLUGIN_ID = "io.github.spwncm.ncmhelper"
+    private const val ROUTE_PATH = PLUGIN_ID + "/netease"
+    private const val MOD_ROUTE_CLASS = "com.xuncorp.voxzen.ui.navigation.ScreenRoute" + "$" + "ModConfigContent"
+
+    @Volatile
+    private var navigator: Any? = null
+
+    fun remember(nav: Any?) {
+        if (nav != null) navigator = nav
+    }
+
+    fun hasNavigator(): Boolean = navigator != null
+
+    private fun host(): ClassLoader = PageSlot::class.java.classLoader
+
+    /** 构造宿主路由对象；失败返回 null */
+    fun create(): Any? = try {
+        val cls = Class.forName(MOD_ROUTE_CLASS, true, host())
+        cls.getConstructor(String::class.java).newInstance(ROUTE_PATH)
+    } catch (t: Throwable) {
+        Log.warn("创建宿主路由失败: " + t)
+        null
+    }
+
+    /** 判断宿主页面内容 key 是否为本插件的网易云页面 */
+    fun isOurs(key: Any?): Boolean {
+        if (key == null) return false
+        return try {
+            val cls = key.javaClass
+            if (cls.simpleName.contains("ModConfigContent")) {
+                for (name in listOf("getPluginId", "getRoute", "pluginId")) {
+                    runCatching {
+                        val m = cls.getMethod(name)
+                        val v = m.invoke(key) ?: return@runCatching
+                        if (v.toString().contains(ROUTE_PATH)) return true
+                    }
+                }
+                for (f in cls.declaredFields) {
+                    if (f.name.contains("pluginId", ignoreCase = true) || f.name.contains("route", ignoreCase = true)) {
+                        f.isAccessible = true
+                        val v = f.get(key) ?: continue
+                        if (v.toString().contains(ROUTE_PATH)) return true
+                    }
+                }
+                return key.toString().contains(ROUTE_PATH)
+            }
+            // NavEntry 包装：尝试取其 route
+            for (m in cls.methods) {
+                if (m.parameterCount == 0 && m.returnType.simpleName.contains("ScreenRoute")) {
+                    val route = runCatching { m.invoke(key) }.getOrNull()
+                    if (route != null && isOurs(route)) return true
+                }
+            }
+            false
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** 导航到本插件页面；返回是否成功 */
+    fun navigateTo(): Boolean {
+        val nav = navigator ?: run {
+            Log.warn("尚未捕获宿主 Navigator，无法路由导航")
+            return false
+        }
+        val route = create() ?: return false
+        return try {
+            val method = nav.javaClass.methods.firstOrNull {
+                it.name == "navigate" && it.parameterCount == 1
+            } ?: return false
+            method.invoke(nav, route)
+            true
+        } catch (t: Throwable) {
+            Log.warn("路由导航失败: " + t)
+            false
+        }
+    }
+
+    /** 返回上一页 */
+    fun back(): Boolean {
+        val nav = navigator ?: return false
+        return try {
+            nav.javaClass.getMethod("back").invoke(nav)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+}
+
 object PageSlot {
 
     private const val SINGLETON = "com.xuncorp.voxzen.ui.navigation.ComposableSingletons\$AppNavigation_desktopKt"
@@ -99,12 +191,15 @@ object PageSlot {
 
             val wrapped: @Composable (Any) -> Unit = { key ->
                 observedKey = key
-                val visibleNow = NeteaseNativeUi.pageVisible
-                if (lastLoggedVisible != visibleNow) {
-                    lastLoggedVisible = visibleNow
-                    Log.info("页面内容槽调用: pageVisible=" + visibleNow + ", key=" + key?.javaClass?.simpleName)
+                val ours = NeteaseRoute.isOurs(key)
+                if (lastLoggedVisible != ours) {
+                    lastLoggedVisible = ours
+                    Log.info("页面内容槽调用: ours=" + ours + ", key=" + key?.javaClass?.simpleName)
                 }
-                if (visibleNow) {
+                if (ours) {
+                    NeteaseNativeUi.onRoutePageShown()
+                }
+                if (ours && NeteaseNativeUi.pageVisible) {
                     val expected = pageKey.get()
                     if (expected == null) {
                         pageKey.set(key)
@@ -116,7 +211,7 @@ object PageSlot {
                 } else if (pageKey.get() != null) {
                     pageKey.set(null)
                 }
-                if (visibleNow) {
+                if (ours && NeteaseNativeUi.pageVisible) {
                     NeteaseEmbeddedPage()
                 } else {
                     fallback(key)
@@ -195,7 +290,7 @@ object PageSlot {
 
 /** 侧边栏「网易云音乐」行：与宿主侧边栏项同样的主题色/间距 */
 @Composable
-internal fun NeteaseSidebarRow() {
+internal fun NeteaseSidebarRow(onClick: () -> Unit = { NeteaseNativeUi.openEmbedded() }) {
     val colors = MaterialTheme.colorScheme
     val typography = MaterialTheme.typography
     val selected = NeteaseNativeUi.pageVisible
@@ -204,7 +299,7 @@ internal fun NeteaseSidebarRow() {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) colors.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable { NeteaseNativeUi.openEmbedded() }
+            .clickable { onClick() }
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

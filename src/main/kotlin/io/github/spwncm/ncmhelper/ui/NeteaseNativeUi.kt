@@ -158,6 +158,24 @@ object NeteaseNativeUi {
         }.start()
     }
 
+    /** 路由页面正在显示（由页面槽包装器调用） */
+    internal fun onRoutePageShown() {
+        if (!pageVisible) {
+            pageVisible = true
+            refreshStatus()
+            if (cards.isEmpty()) loadCards()
+        }
+    }
+
+    /** 路由离开本插件页面 */
+    internal fun onRoutePageHidden() {
+        if (pageVisible) {
+            pageVisible = false
+            dialogFallback = false
+            dialogShown.set(false)
+        }
+    }
+
     internal fun onEmbeddedRendered() {
         embeddedRenderCount.incrementAndGet()
         Log.info("内嵌页面已组合渲染")
@@ -175,6 +193,10 @@ object NeteaseNativeUi {
         dialogShown.set(false)
         PageSlot.resetKey()
         releaseOverlay()
+        if (embedded) {
+            val ok = NeteaseRoute.back()
+            Log.info("关闭页面: 路由返回 = " + ok)
+        }
     }
 
     @JvmStatic
@@ -201,8 +223,27 @@ object NeteaseNativeUi {
         return false
     }
 
+    /** 捕获宿主 Navigator 实例（hook navigate/back 的 this 对象） */
+    private fun installNavigatorCapture() {
+        try {
+            val hook = object : com.xuncorp.spw.workshop.api.hook.MethodHook() {
+                override fun before(param: com.xuncorp.spw.workshop.api.hook.MethodHookParam) {
+                    NeteaseRoute.remember(param.thisObject)
+                }
+            }
+            WorkshopApi.hookRegistrar.hookMethod(
+                "com.xuncorp.voxzen.ui.navigation.Navigator", "navigate",
+                listOf("com.xuncorp.voxzen.ui.navigation.ScreenRoute"), hook
+            )
+            Log.info("Navigator 捕获 Hook 已安装")
+        } catch (t: Throwable) {
+            Log.warn("Navigator 捕获 Hook 安装失败: $t")
+        }
+    }
+
     /** 安装侧边栏入口，并尝试接管宿主页面内容槽实现主界面内嵌显示 */
     private fun installEmbedded() {
+        installNavigatorCapture()
         if (sidebarHandle == null) {
             try {
                 sidebarHandle = WorkshopApi.hookRegistrar.afterComposable(
@@ -582,7 +623,11 @@ private class SidebarHook : ComposableHook() {
             if (NeteaseNativeUi.markSidebarTarget()) {
                 Log.info("侧边栏: 命中 NewPlaylist（新建歌单），在其下方渲染网易云入口")
             }
-            NeteaseSidebarRow()
+            NeteaseSidebarRow {
+            val ok = NeteaseRoute.navigateTo()
+            Log.info("侧边栏: 导航到网易云页面 = " + ok)
+            if (!ok) NeteaseNativeUi.openEmbedded()
+        }
             return
         }
         // 仅在新歌单下方渲染，避免重复入口
