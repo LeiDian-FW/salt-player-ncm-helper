@@ -103,7 +103,14 @@ public final class NeteaseUiBridge {
         return c.myLikes();
     }
 
-    /** 发现页数据：tab = playlist / newsong / mine / daily */
+    private static volatile String lastSearchKeyword = "";
+
+    /** 设置搜索关键词（发现页搜索用） */
+    public static void setSearchKeyword(String keyword) {
+        lastSearchKeyword = keyword == null ? "" : keyword;
+    }
+
+    /** 发现页数据：tab = playlist / newsong / mine / daily / roam / search */
     public static java.util.List<NeteaseClient.Card> discovery(String tab) throws Exception {
         NeteaseClient c = client;
         if (c == null) throw new IllegalStateException("插件未就绪");
@@ -112,6 +119,8 @@ public final class NeteaseUiBridge {
             case "newsong" -> c.newSongs(10);
             case "mine" -> c.myPlaylists();
             case "daily" -> c.dailySongs();
+            case "roam" -> c.hotSongs(10);
+            case "search" -> c.searchCards(lastSearchKeyword, 10);
             default -> throw new IllegalArgumentException("未知页签: " + tab);
         };
     }

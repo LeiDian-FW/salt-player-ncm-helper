@@ -64,10 +64,11 @@ private val TRACK = Color(0xFFE5E6EB)
 private val BADGE_BG = Color(0x99000000)
 
 private val TABS = listOf(
-    Triple("推荐歌单", "playlist", "推荐歌单"),
-    Triple("推荐新歌", "newsong", "推荐新歌"),
-    Triple("我的歌单", "mine", "我的歌单"),
-    Triple("每日推荐", "daily", "每日推荐")
+    "推荐歌单" to "playlist",
+    "每日推荐" to "daily",
+    "音乐漫游" to "roam",
+    "私人歌单" to "mine",
+    "推荐新歌" to "newsong"
 )
 
 /**
@@ -87,6 +88,7 @@ object NeteaseNativeUi {
     internal var cards by mutableStateOf<List<NeteaseClient.Card>>(emptyList())
     internal var covers by mutableStateOf<Map<String, ImageBitmap>>(emptyMap())
     internal var loading by mutableStateOf(false)
+    internal var searchText by mutableStateOf("")
     internal var loadToken by mutableStateOf(0)
 
     internal var dlActive by mutableStateOf(false)
@@ -181,6 +183,18 @@ object NeteaseNativeUi {
     internal fun switchTab(key: String) {
         tab = key
         Log.info("原生面板: 切换到页签 " + key)
+        loadCards()
+    }
+
+    internal fun search() {
+        val kw = searchText.trim()
+        if (kw.isEmpty()) {
+            message = "请输入搜索关键词"
+            return
+        }
+        NeteaseUiBridge.setSearchKeyword(kw)
+        Log.info("原生面板: 搜索 " + kw)
+        tab = "search"
         loadCards()
     }
 
@@ -304,17 +318,23 @@ object NeteaseNativeUi {
     }
 
     private fun demoCards(): List<NeteaseClient.Card> = listOf(
-        demoCard("イイコと妖狐", "きくお / 绮萱", 233000, "song"),
-        demoCard("再生", "ナナツカゼ / PIKASONIC / なこ", 161000, "song"),
-        demoCard("下一站泊风港", "蛋仔派对", 90000, "song"),
-        demoCard("素颜", "许嵩 / 何曼婷", 238000, "song"),
-        demoCard("山楂树之恋", "程佳佳", 184000, "song"),
-        demoCard("hello&bye, days", "洛天依 / 乐正绫", 252000, "song"),
-        demoCard("还是分开", "张叶蕾", 210000, "song"),
-        demoCard("花之舞", "大依", 200000, "song"),
-        demoCard("黄泉之舞", "洛天依", 240000, "song"),
-        demoCard("心似烟火", "陈壹千", 271000, "song")
+        demoPlaylist("イイコと妖狐", "きくお / 绮萱", 233000, 1289000),
+        demoPlaylist("再生", "ナナツカゼ / PIKASONIC", 161000, 560000),
+        demoPlaylist("下一站泊风港", "蛋仔派对", 90000, 320000),
+        demoPlaylist("素颜", "许嵩 / 何曼婷", 238000, 2100000),
+        demoPlaylist("山楂树之恋", "程佳佳", 184000, 870000),
+        demoPlaylist("hello&bye, days", "洛天依 / 乐正绫", 252000, 430000),
+        demoPlaylist("还是分开", "张叶蕾", 210000, 150000),
+        demoPlaylist("花之舞", "大依", 200000, 98000),
+        demoPlaylist("黄泉之舞", "洛天依", 240000, 760000),
+        demoPlaylist("心似烟火", "陈壹千", 271000, 1200000)
     )
+
+    private fun demoPlaylist(title: String, artist: String, duration: Long, playCount: Long): NeteaseClient.Card {
+        val c = demoCard(title, artist, duration, "playlist")
+        c.playCount = playCount
+        return c
+    }
 
     private fun demoSongs(): List<NeteaseClient.Card> = demoCards()
 
@@ -432,6 +452,10 @@ private fun Header() {
             BasicText(NeteaseNativeUi.message, style = TextStyle(color = ACCENT, fontSize = 12.sp))
             Spacer(Modifier.width(12.dp))
         }
+        InputBox(NeteaseNativeUi.searchText, "搜索歌曲/歌手") { NeteaseNativeUi.searchText = it }
+        Spacer(Modifier.width(8.dp))
+        PageButton("搜索") { NeteaseNativeUi.search() }
+        Spacer(Modifier.width(8.dp))
         PageButton("从剪贴板登录") { NeteaseNativeUi.clipboardLogin() }
         Spacer(Modifier.width(8.dp))
         PageButton("扫码登录") { NeteaseNativeUi.startScan() }
@@ -445,14 +469,14 @@ private fun Header() {
 @Composable
 private fun TabRow() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        TABS.forEachIndexed { index, (label, key, _) ->
+        TABS.forEachIndexed { index, (label, key) ->
             val selected = NeteaseNativeUi.tab == key
             Box(
                 Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (selected) CARD_BG else Color.Transparent)
                     .clickable { NeteaseNativeUi.switchTab(key) }
-                    .padding(horizontal = 22.dp, vertical = 10.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 BasicText(label, style = TextStyle(
                     color = if (selected) HEADER_TEXT else SUB_TEXT,
@@ -517,6 +541,14 @@ private fun CardItem(card: NeteaseClient.Card) {
                     .clip(RoundedCornerShape(6.dp)).background(BADGE_BG)
                     .padding(horizontal = 6.dp, vertical = 2.dp)) {
                     BasicText(formatDuration(card.duration),
+                        style = TextStyle(color = Color.White, fontSize = 11.sp))
+                }
+            }
+            if (card.kind == "playlist" && card.playCount > 0) {
+                Box(Modifier.align(Alignment.BottomStart).padding(8.dp)
+                    .clip(RoundedCornerShape(6.dp)).background(BADGE_BG)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)) {
+                    BasicText("▶ " + formatPlayCount(card.playCount),
                         style = TextStyle(color = Color.White, fontSize = 11.sp))
                 }
             }
@@ -618,6 +650,14 @@ private fun QrCanvas(rows: Array<BooleanArray>) {
                 }
             }
         }
+    }
+}
+
+private fun formatPlayCount(count: Long): String {
+    return when {
+        count >= 100_000_000 -> String.format("%.1f亿", count / 100_000_000.0)
+        count >= 10_000 -> String.format("%.1f万", count / 10_000.0)
+        else -> count.toString()
     }
 }
 

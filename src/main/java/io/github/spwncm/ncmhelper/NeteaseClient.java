@@ -45,6 +45,7 @@ public final class NeteaseClient {
         public final List<String> artists = new ArrayList<>();
         public long fee;
         public long duration;
+        public String coverUrl = "";
 
         public String artistText() {
             return String.join("/", artists);
@@ -409,6 +410,41 @@ public final class NeteaseClient {
         return out;
     }
 
+    /** 搜索并转为发现页卡片 */
+    public java.util.List<Card> searchCards(String keyword, int limit) throws IOException {
+        java.util.List<Song> songs = search(keyword, Math.max(1, Math.min(30, limit)));
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (Song song : songs) {
+            Card c = new Card();
+            c.id = song.id;
+            c.title = song.name;
+            c.subtitle = song.artistText();
+            c.coverUrl = song.coverUrl;
+            c.duration = song.duration;
+            c.kind = "song";
+            out.add(c);
+        }
+        return out;
+    }
+
+    /** 热歌榜歌曲（音乐漫游用） */
+    public java.util.List<Card> hotSongs(int limit) throws IOException {
+        java.util.List<Song> songs = playlist(3778678L);
+        java.util.List<Card> out = new java.util.ArrayList<>();
+        for (int i = 0; i < Math.min(limit, songs.size()); i++) {
+            Song song = songs.get(i);
+            Card c = new Card();
+            c.id = song.id;
+            c.title = song.name;
+            c.subtitle = song.artistText();
+            c.coverUrl = song.coverUrl;
+            c.duration = song.duration;
+            c.kind = "song";
+            out.add(c);
+        }
+        return out;
+    }
+
     /** 下载图片字节（封面等） */
     public byte[] fetchBytes(String url) throws IOException {
         HttpURLConnection conn = open(url, "GET", false);
@@ -687,7 +723,9 @@ public final class NeteaseClient {
         Song s = new Song();
         s.id = Json.lng(m, "id", 0);
         s.name = Json.str(m, "name", "");
-        s.album = Json.str(Json.asMap(m.get("album")), "name", "");
+        Map<String, Object> albumMap = Json.asMap(m.get("album"));
+        s.album = Json.str(albumMap, "name", "");
+        s.coverUrl = Json.str(albumMap, "picUrl", "");
         s.fee = Json.lng(m, "fee", 0);
         s.duration = Json.lng(m, "duration", 0);
         for (Object a : Json.asList(m.get("artists"))) {
