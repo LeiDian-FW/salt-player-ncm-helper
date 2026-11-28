@@ -305,7 +305,8 @@ internal fun NeteaseEmbeddedPage() {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 12.dp)
+                // 底部预留空间，避免被宿主播放条遮挡
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 92.dp)
         ) {
             if (NeteaseNativeUi.viewMode == "detail") {
                 EmbeddedPlaylistDetail(Modifier.weight(1f))

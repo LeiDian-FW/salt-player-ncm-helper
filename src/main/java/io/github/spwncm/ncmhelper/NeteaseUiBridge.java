@@ -146,7 +146,7 @@ public final class NeteaseUiBridge {
     public static String cacheDir() {
         MainPlugin p = MainPlugin.instance();
         if (p == null) return "";
-        java.nio.file.Path dir = p.dataDirRef().resolve("covers");
+        java.nio.file.Path dir = p.dataDirRef().resolve("covers2");
         try {
             java.nio.file.Files.createDirectories(dir);
         } catch (Exception ignored) {

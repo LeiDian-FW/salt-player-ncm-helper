@@ -448,75 +448,58 @@ object NeteaseNativeUi {
             try {
                 val cacheDir = NeteaseUiBridge.cacheDir()
                 val pending = list.filter { it.coverUrl.isNotEmpty() && !covers.containsKey(it.coverUrl) }
-                if (pending.isEmpty()) return@Thread
-                val map = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap>()
-                // 并行下载/解码封面（最多 6 个并发），显著缩短加载时间
-                val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
-                val latch = java.util.concurrent.CountDownLatch(pending.size)
+                if (pending.isEmpty()) {
+                    coversLoading.set(false)
+                    return@Thread
+                }
+                val map = HashMap<String, ImageBitmap>()
                 for (card in pending) {
-                    pool.execute {
-                        try {
-                            val bytes = loadCoverBytes(card.coverUrl, cacheDir) ?: return@execute
-                            javax.imageio.ImageIO.setUseCache(false)
-                            val stream = javax.imageio.stream.MemoryCacheImageInputStream(
-                                ByteArrayInputStream(bytes))
-                            val img = javax.imageio.ImageIO.read(stream)
-                            stream.close()
-                            if (img != null) map[card.coverUrl] = img.toComposeImageBitmap()
-                        } catch (_: Throwable) {
-                        } finally {
-                            latch.countDown()
-                        }
-                    }
+                    val img = decodeCover(card.coverUrl, cacheDir) ?: continue
+                    map[card.coverUrl] = img
                 }
-                latch.await(15, java.util.concurrent.TimeUnit.SECONDS)
-                pool.shutdownNow()
-                if (map.isNotEmpty()) {
-                    covers = covers + map
-                    Log.info("原生面板: 封面加载 " + map.size + " 张（并行）")
-                }
-            } catch (_: Throwable) {
+                if (map.isNotEmpty()) covers = covers + map
+                Log.info("原生面板: 封面加载 " + map.size + "/" + pending.size + " 张")
+            } catch (t: Throwable) {
+                Log.warn("封面加载异常: " + t)
             } finally {
                 coversLoading.set(false)
             }
         }.start()
     }
 
-    /** 并行加载一组歌曲的专辑封面 */
+    /** 下载并解码一张封面（带磁盘缓存与损坏校验） */
+    private fun decodeCover(url: String, cacheDir: String): ImageBitmap? {
+        return try {
+            val bytes = loadCoverBytes(url, cacheDir) ?: return null
+            javax.imageio.ImageIO.setUseCache(false)
+            val stream = javax.imageio.stream.MemoryCacheImageInputStream(ByteArrayInputStream(bytes))
+            val img = javax.imageio.ImageIO.read(stream)
+            stream.close()
+            img?.toComposeImageBitmap()
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /** 加载一组歌曲的专辑封面（顺序，最多前 60 首） */
     internal fun loadTrackCovers(tracks: List<NeteaseClient.Song>) {
-        val pending = tracks.map { it.coverUrl }
-            .filter { it.isNotEmpty() && !covers.containsKey(it) }
-            .distinct()
-        if (pending.isEmpty()) return
+        if (tracks.isEmpty()) return
         Thread {
             try {
                 val cacheDir = NeteaseUiBridge.cacheDir()
-                val map = java.util.concurrent.ConcurrentHashMap<String, ImageBitmap>()
-                val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
-                val latch = java.util.concurrent.CountDownLatch(pending.size)
+                val pending = tracks.take(60).map { it.coverUrl }
+                    .filter { it.isNotEmpty() && !covers.containsKey(it) }
+                    .distinct()
+                if (pending.isEmpty()) return@Thread
+                val map = HashMap<String, ImageBitmap>()
                 for (url in pending) {
-                    pool.execute {
-                        try {
-                            val bytes = loadCoverBytes(url, cacheDir) ?: return@execute
-                            javax.imageio.ImageIO.setUseCache(false)
-                            val stream = javax.imageio.stream.MemoryCacheImageInputStream(
-                                ByteArrayInputStream(bytes))
-                            val img = javax.imageio.ImageIO.read(stream)
-                            stream.close()
-                            if (img != null) map[url] = img.toComposeImageBitmap()
-                        } catch (_: Throwable) {
-                        } finally {
-                            latch.countDown()
-                        }
-                    }
+                    val img = decodeCover(url, cacheDir) ?: continue
+                    map[url] = img
                 }
-                latch.await(20, java.util.concurrent.TimeUnit.SECONDS)
-                pool.shutdownNow()
-                if (map.isNotEmpty()) {
-                    covers = covers + map
-                    Log.info("曲目封面加载 " + map.size + " 张")
-                }
-            } catch (_: Throwable) {
+                if (map.isNotEmpty()) covers = covers + map
+                Log.info("曲目封面加载 " + map.size + "/" + pending.size + " 张")
+            } catch (t: Throwable) {
+                Log.warn("曲目封面加载异常: " + t)
             }
         }.start()
     }
@@ -527,18 +510,36 @@ object NeteaseNativeUi {
                 val name = java.security.MessageDigest.getInstance("SHA-1")
                     .digest(url.toByteArray()).joinToString("") { "%02x".format(it) } + ".img"
                 val f = java.io.File(cacheDir, name)
-                if (f.isFile && f.length() > 0) return f.readBytes()
+                if (f.isFile && f.length() > 0) {
+                    val cached = f.readBytes()
+                    if (isImageBytes(cached)) return cached
+                    // 缓存损坏（历史中断写入）：删除后重新下载
+                    runCatching { f.delete() }
+                }
                 val bytes = NeteaseUiBridge.cover(url)
-                if (bytes != null && bytes.isNotEmpty()) {
+                if (bytes != null && bytes.isNotEmpty() && isImageBytes(bytes)) {
                     runCatching { f.writeBytes(bytes) }
                     return bytes
                 }
+                Log.warn("封面下载失败: " + url.take(80))
                 return null
             }
             return NeteaseUiBridge.cover(url)
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            Log.warn("封面读取异常: " + t)
             return null
         }
+    }
+
+    /** 粗略校验图片字节（JPEG/PNG/WEBP 头） */
+    private fun isImageBytes(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        val b0 = bytes[0].toInt() and 0xFF
+        val b1 = bytes[1].toInt() and 0xFF
+        if (b0 == 0xFF && b1 == 0xD8) return true // JPEG
+        if (b0 == 0x89 && b1 == 0x50) return true // PNG
+        if (b0 == 0x52 && b1 == 0x49) return true // WEBP(RIFF)
+        return false
     }
 
     internal fun openCard(card: NeteaseClient.Card) {
