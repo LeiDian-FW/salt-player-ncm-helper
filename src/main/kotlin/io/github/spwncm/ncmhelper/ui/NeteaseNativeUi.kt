@@ -100,7 +100,7 @@ object NeteaseNativeUi {
     internal var message by mutableStateOf("")
     internal var tab by mutableStateOf("playlist")
     internal var cards by mutableStateOf<List<NeteaseClient.Card>>(emptyList())
-    internal var covers by mutableStateOf<Map<String, ImageBitmap>>(emptyMap())
+    internal val covers = androidx.compose.runtime.mutableStateMapOf<String, ImageBitmap>()
     internal var loading by mutableStateOf(false)
     internal var searchText by mutableStateOf("")
     internal var avatar by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
@@ -457,7 +457,7 @@ object NeteaseNativeUi {
                     val img = decodeCover(card.coverUrl, cacheDir) ?: continue
                     map[card.coverUrl] = img
                 }
-                if (map.isNotEmpty()) covers = covers + map
+                map.forEach { (k, v) -> covers[k] = v }
                 Log.info("原生面板: 封面加载 " + map.size + "/" + pending.size + " 张")
             } catch (t: Throwable) {
                 Log.warn("封面加载异常: " + t)
@@ -478,34 +478,19 @@ object NeteaseNativeUi {
                 Log.warn("封面解码失败: " + url.take(80) + " 字节=" + bytes.size)
                 return null
             }
-            img.toComposeImageBitmap()
+            // 缩放到最大 320px：内存占用从约 4MB/张 降到约 0.4MB/张，避免 GC 抖动
+            val scaled = scaleDown(img, 320)
+            scaled.toComposeImageBitmap()
         } catch (t: Throwable) {
             Log.warn("封面解码异常: " + t)
             null
         }
     }
 
-    /** 加载一组歌曲的专辑封面（顺序，最多前 60 首） */
+    /** 曲目封面按需加载：由列表可见行触发，不再一次性预取 */
     internal fun loadTrackCovers(tracks: List<NeteaseClient.Song>) {
-        if (tracks.isEmpty()) return
-        Thread {
-            try {
-                val cacheDir = NeteaseUiBridge.cacheDir()
-                val pending = tracks.take(60).map { it.coverUrl }
-                    .filter { it.isNotEmpty() && !covers.containsKey(it) }
-                    .distinct()
-                if (pending.isEmpty()) return@Thread
-                val map = HashMap<String, ImageBitmap>()
-                for (url in pending) {
-                    val img = decodeCover(url, cacheDir) ?: continue
-                    map[url] = img
-                }
-                if (map.isNotEmpty()) covers = covers + map
-                Log.info("曲目封面加载 " + map.size + "/" + pending.size + " 张")
-            } catch (t: Throwable) {
-                Log.warn("曲目封面加载异常: " + t)
-            }
-        }.start()
+        // 预取前 12 张（首屏可见），其余滚动到可见时由 requestCover 加载
+        tracks.take(12).forEach { if (it.coverUrl.isNotEmpty()) requestCover(it.coverUrl) }
     }
 
     private fun loadCoverBytes(url: String, cacheDir: String): ByteArray? {
@@ -534,6 +519,52 @@ object NeteaseNativeUi {
             return null
         }
     }
+
+    /** 等比缩小图片到最长边不超过 maxSize */
+    private fun scaleDown(src: java.awt.image.BufferedImage, maxSize: Int): java.awt.image.BufferedImage {
+        val w = src.width
+        val h = src.height
+        val longest = maxOf(w, h)
+        if (longest <= maxSize) return src
+        val scale = maxSize.toDouble() / longest
+        val nw = maxOf(1, (w * scale).toInt())
+        val nh = maxOf(1, (h * scale).toInt())
+        val out = java.awt.image.BufferedImage(nw, nh, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = out.createGraphics()
+        g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+            java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        g.drawImage(src, 0, 0, nw, nh, null)
+        g.dispose()
+        return out
+    }
+
+    /** 按需加载单张封面（可见行懒加载，单线程队列 + 去重 + 上限） */
+    internal fun requestCover(url: String) {
+        if (url.isEmpty() || covers.containsKey(url)) return
+        if (!coverPending.add(url)) return
+        coverQueue.execute {
+            try {
+                val img = decodeCover(url, NeteaseUiBridge.cacheDir())
+                if (img != null) {
+                    covers[url] = img
+                    if (covers.size > 120) {
+                        // 只保留最近 80 张，防止内存无限增长
+                        val keep = covers.keys.toList().takeLast(80)
+                        val drop = covers.keys.filter { it !in keep }
+                        drop.forEach { covers.remove(it) }
+                    }
+                }
+            } catch (_: Throwable) {
+            } finally {
+                coverPending.remove(url)
+            }
+        }
+    }
+
+    private val coverQueue = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "netease-cover").also { it.isDaemon = true }
+    }
+    private val coverPending = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** 粗略校验图片字节（JPEG/PNG/WEBP 头） */
     private fun isImageBytes(bytes: ByteArray): Boolean {
@@ -780,7 +811,7 @@ object NeteaseNativeUi {
         return try {
             ImageIO.setUseCache(false)
             val img = ImageIO.read(java.io.File(filePath)) ?: return false
-            covers = covers + (url to img.toComposeImageBitmap())
+            covers[url] = img.toComposeImageBitmap()
             true
         } catch (_: Throwable) {
             false

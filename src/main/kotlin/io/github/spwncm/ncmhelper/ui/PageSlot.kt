@@ -473,7 +473,12 @@ private fun AccountAvatar() {
 @Composable
 private fun EmbeddedPlaylistDetail(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        androidx.compose.runtime.LaunchedEffect(NeteaseNativeUi.detailCoverUrl) {
+        if (NeteaseNativeUi.detailCoverUrl.isNotEmpty()) {
+            NeteaseNativeUi.requestCover(NeteaseNativeUi.detailCoverUrl)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             ThemeAction("← 返回") { NeteaseNativeUi.closeDetail() }
             Spacer(Modifier.width(10.dp))
             // 歌单封面
@@ -527,6 +532,9 @@ private fun EmbeddedPlaylistDetail(modifier: Modifier = Modifier) {
         LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
             items(NeteaseNativeUi.detailTracks.size) { index ->
                 val track = NeteaseNativeUi.detailTracks[index]
+                androidx.compose.runtime.LaunchedEffect(track.coverUrl) {
+                    if (track.coverUrl.isNotEmpty()) NeteaseNativeUi.requestCover(track.coverUrl)
+                }
                 val checked = NeteaseNativeUi.selectedTracks.contains(index)
                 Row(
                     Modifier
