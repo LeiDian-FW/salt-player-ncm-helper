@@ -538,10 +538,16 @@ private class SidebarHook : ComposableHook() {
         NeteaseNativeUi.onSidebarHit()
         val item = runCatching { call.getArgument(0) }.getOrNull()
         val label = routeLabel(item)
-        val isTarget = label.contains("新建歌单") || label.contains("新建") || label.contains("歌单")
-        val fallback = !isTarget && NeteaseNativeUi.claimSidebarRow()
-        if (!isTarget && !fallback) return
-        if (isTarget && !NeteaseNativeUi.claimSidebarRow()) return
+        val isTarget = label.contains("新建歌单")
+        if (isTarget) {
+            if (!NeteaseNativeUi.claimSidebarRow()) return
+            Log.info("侧边栏: 命中「新建歌单」，在其下方渲染入口")
+            NeteaseSidebarRow()
+            return
+        }
+        // 找不到「新建歌单」时保底：仅在从未渲染过的情况下渲染一次
+        if (!NeteaseNativeUi.claimSidebarRow()) return
+        Log.info("侧边栏: 未匹配到新建歌单（label=" + label + "），使用保底位置")
         NeteaseSidebarRow()
     }
 
@@ -549,15 +555,23 @@ private class SidebarHook : ComposableHook() {
     private fun routeLabel(item: Any?): String {
         if (item == null) return ""
         return try {
-            val fields = item.javaClass.declaredFields
-            for (field in fields) {
+            val texts = StringBuilder()
+            for (field in item.javaClass.declaredFields) {
+                field.isAccessible = true
                 if (field.type == String::class.java) {
-                    field.isAccessible = true
-                    val value = field.get(item) as? String
-                    if (!value.isNullOrEmpty()) return value
+                    texts.append(field.get(item)).append('|')
                 }
             }
-            ""
+            texts.append(item.toString()).append('|')
+            val routeField = item.javaClass.declaredFields.firstOrNull {
+                it.type.name.contains("ScreenRoute")
+            }
+            if (routeField != null) {
+                routeField.isAccessible = true
+                val route = routeField.get(item)
+                texts.append(route?.javaClass?.simpleName).append('|').append(route?.toString())
+            }
+            texts.toString()
         } catch (_: Throwable) {
             ""
         }

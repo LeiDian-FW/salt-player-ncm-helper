@@ -76,8 +76,20 @@ object PageSlot {
                 return false
             }
             val field = lambdaClass.getDeclaredField("_block").apply { isAccessible = true }
-            val current = field.get(target)
             val upd = lambdaClass.getMethod("update", Any::class.java)
+            var current = field.get(target)
+            // 上一次版本可能把 Compose 容器写进了槽位（历史残留）：先解包，
+            // 若解出的不是 Function3 则放弃接管（绝不写入非法对象）。
+            if (lambdaClass.isInstance(current)) {
+                // 检测到历史残留容器：无法安全还原原始内容，明确放弃接管并提示重启播放器。
+                failure = "slot-leftover-container-please-restart-host"
+                Log.warn("页面槽存在上次版本的残留对象，已放弃接管；请完整退出并重启 Salt Player 以清除残留")
+                return false
+            }
+            if (current !is kotlin.jvm.functions.Function3<*, *, *, *>) {
+                failure = "slot-not-function3:" + current.javaClass.name
+                return false
+            }
             val fallback = current as? @Composable (Any) -> Unit
             if (fallback == null) {
                 failure = "slot-arity-unsupported"
@@ -152,9 +164,7 @@ object PageSlot {
 
     fun uninstall() {
         try {
-            if (wrapper != null && blockField?.get(slot) === wrapper) {
-                update?.invoke(slot, original)
-            }
+            if (wrapper != null) update?.invoke(slot, original)
         } catch (_: Throwable) {
         }
         wrapper = null
