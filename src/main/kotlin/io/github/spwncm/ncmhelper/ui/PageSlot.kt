@@ -60,6 +60,7 @@ object PageSlot {
 
     fun isInstalled(): Boolean = wrapper != null
 
+
     fun failure(): String = failure
 
     fun install(): Boolean {
@@ -104,12 +105,22 @@ object PageSlot {
                 }
             }
 
-            upd.invoke(target, wrapped)
+            // _block 必须是原始 arity-3 函数体（Function3），不能是 Compose 的容器对象，
+            // 否则宿主调用时会 ComposableLambdaImpl -> Function3 类型转换崩溃。
+            var rawBody: Any = wrapped
+            if (lambdaClass.isInstance(wrapped)) {
+                rawBody = field.get(wrapped)
+            }
+            if (rawBody !is kotlin.jvm.functions.Function3<*, *, *, *>) {
+                failure = "block-body-not-function3:" + rawBody.javaClass.name
+                return false
+            }
+            upd.invoke(target, rawBody)
             slot = target
             blockField = field
             update = upd
             original = current
-            wrapper = wrapped
+            wrapper = rawBody
             failure = "none"
             Log.info("页面内容槽已接管（主界面内嵌显示）")
             true
